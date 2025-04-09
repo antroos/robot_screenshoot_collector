@@ -1,0 +1,41 @@
+# Игнорируем папки с тестами (т.к. они могут быть большими)
+tests/
+
+# Игнорируем Python файлы
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Игнорируем системные файлы macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Игнорируем файлы с координатами
+last_coordinates.txt
+
+# Игнорируем временные файлы
+*.tmp
+*.bak
+*.swp
+
+# Игнорируем файл с API ключом
+api_key.txt 
