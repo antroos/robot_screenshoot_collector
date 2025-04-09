@@ -470,6 +470,10 @@ class AnthropicComputerController:
         try:
             print("Запуск демонстрації роботи з App Store...")
             
+            # Запрос текста для поиска в самом начале
+            text_to_type = input("Введіть текст для пошуку (або натисніть Enter для 'перемога'): ") or "перемога"
+            print(f"Буде виконано пошук за запитом: '{text_to_type}'")
+            
             # Робимо знімок поточного екрану
             print("Робимо знімок поточного екрану...")
             self.take_screenshot(self.screen_path)
@@ -522,8 +526,9 @@ class AnthropicComputerController:
                 self.take_screenshot(cursor_check_path)
                 print(f"Знімок із позицією курсора збережено в {cursor_check_path}")
                 
-                # Ручне підтвердження позиції
-                proceed = input("Курсор знаходиться в правильній позиції? (y/n): ")
+                # Автоматическое подтверждение вместо ручного
+                print("Автоматично продовжуємо (курсор знаходиться в правильній позиції)")
+                proceed = "y"
                 
                 # Якщо потрібна корекція
                 if proceed.lower() != 'y':
@@ -545,14 +550,22 @@ class AnthropicComputerController:
                         return False
                 
                 # Виконуємо клік
-                print(f"Виконуємо клік за координатами ({scaled_x}, {scaled_y})...")
+                print(f"Виконуємо подвійний клік за координатами ({scaled_x}, {scaled_y})...")
+                # Первый клик
                 pyautogui.click(scaled_x, scaled_y)
+                # Задержка между кликами
+                time.sleep(0.3)
+                # Второй клик
+                pyautogui.click(scaled_x, scaled_y)
+                print(f"Подвійний клік виконано в позиції ({scaled_x}, {scaled_y})")
                 
                 # Чекаємо трохи після кліка
                 time.sleep(1.5)  # Збільшено час очікування
                 
-                # Перевіряємо, чи активовано елемент вводу
-                input_check = input("Поле вводу активовано? (y/n): ")
+                # Автоматическое подтверждение вместо ручного
+                print("Автоматично продовжуємо (поле вводу активовано)")
+                input_check = "y"
+                
                 if input_check.lower() != 'y':
                     # Спробуємо повторно клікнути з більшим натиском
                     print("Виконуємо повторний клік...")
@@ -560,16 +573,22 @@ class AnthropicComputerController:
                     pyautogui.click(scaled_x, scaled_y)  # Подвійний клік
                     time.sleep(1)
                 
-                # Вводимо текст "перемога"
-                print("Вводимо текст 'перемога'...")
-                self.type_text("перемога")
+                # Вводимо введенный текст
+                print(f"Вводимо текст '{text_to_type}'...")
+                self.type_text(text_to_type)
                 
-                # Перевіряємо, чи був успішно введений текст
-                text_check = input("Текст успішно введено? (y/n): ")
+                # Автоматическое подтверждение вместо ручного
+                print("Автоматично продовжуємо (текст успішно введено)")
+                text_check = "y"
+                
                 if text_check.lower() != 'y':
                     # Спробуємо альтернативний спосіб введення
                     print("Використовуємо альтернативний метод введення...")
-                    pyautogui.write("перемога", interval=0.1)  # повільніше введення з інтервалом
+                    pyautogui.write(text_to_type, interval=0.1)  # повільніше введення з інтервалом
+                
+                # Нажимаем Enter для выполнения поиска
+                print("Натискаємо Enter для виконання пошуку...")
+                pyautogui.press('enter')
                 
                 # Чекаємо деякий час, щоб побачити результат дії
                 time.sleep(1.5)
