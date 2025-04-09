@@ -38,4 +38,24 @@ last_coordinates.txt
 *.swp
 
 # Игнорируем файл с API ключом
-api_key.txt 
+api_key.txt
+
+# Результаты работы программы
+*.png
+scaling_info.json
+debug_sessions/
+squares/
+
+# Виртуальное окружение
+venv/
+ENV/
+
+# Файлы IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Системные файлы
+.DS_Store
+Thumbs.db 
