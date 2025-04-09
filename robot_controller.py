@@ -591,12 +591,26 @@ class AnthropicComputerController:
                 pyautogui.press('enter')
                 
                 # Чекаємо деякий час, щоб побачити результат дії
-                time.sleep(1.5)
+                time.sleep(2.0)  # Даем время для загрузки результатов
                 
-                # Робимо знімок результату
+                # Делаем скриншот результатов поиска
                 result_path = os.path.join(self.working_dir, "appstore_result.png")
                 self.take_screenshot(result_path)
                 print(f"Результат дії збережено в {result_path}")
+                
+                # Создаем отдельную папку для результатов, если её еще нет
+                results_folder = os.path.join(self.working_dir, "search_results")
+                os.makedirs(results_folder, exist_ok=True)
+                
+                # Сохраняем скриншот с датой и временем в имени
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                search_text_safe = "".join([c if c.isalnum() else "_" for c in text_to_type])
+                result_filename = f"search_{search_text_safe}_{timestamp}.png"
+                result_path_with_timestamp = os.path.join(results_folder, result_filename)
+                
+                # Копируем скриншот в папку результатов
+                self.take_screenshot(result_path_with_timestamp)
+                print(f"Додатковий знімок результатів збережено в: {result_path_with_timestamp}")
                 
                 # Записуємо інформацію про масштабування для майбутнього використання
                 scaling_info_path = os.path.join(self.working_dir, "scaling_info.json")
