@@ -8,6 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import time
 from find_text import find_text_on_image, load_api_keys
 from robot_controller import AnthropicComputerController
+from PIL import Image
 
 # Настройка логирования
 logging.basicConfig(
@@ -29,7 +30,7 @@ screenshot_path = os.path.join(working_dir, "screen.png")
 logger.info(f"Рабочая директория: {working_dir}")
 
 # Состояния для ConversationHandler
-SEARCH_TERM, CONTEXT_INFO = range(2)
+SEARCH_TERM, CONTEXT_INFO, CLICK_CONFIRM = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет приветственное сообщение при команде /start."""
@@ -40,6 +41,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/search <текст> - Найти текст на экране\n"
         "/search_with_context <текст> | <контекст> - Найти текст с дополнительным контекстом\n"
         "/smart_search - Начать двухэтапный поиск с контекстом\n"
+        "/smart_search_click - Начать двухэтапный поиск с кликом\n"
         "/click <текст> - Найти и кликнуть на текст\n"
         "/type <текст для поиска> | <текст для ввода> - Найти текст, кликнуть и ввести текст\n"
         "/help - Показать справку"
@@ -53,6 +55,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/search_with_context <текст> | <контекст> - Найти текст с дополнительным контекстом\n"
         "Пример: /search_with_context Search | Текст невеликий і є плейсхолдером у полі вводу\n\n"
         "/smart_search - Начать двухэтапный поиск с контекстом\n"
+        "/smart_search_click - Начать двухэтапный поиск с кликом\n"
         "/click <текст> - Найти и кликнуть на текст\n"
         "/type <текст для поиска> | <текст для ввода> - Найти текст, кликнуть и ввести текст\n"
         "/anthropic_click <текст> - Найти и кликнуть на текст с использованием Anthropic API"
@@ -468,6 +471,169 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
+async def start_smart_search_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начинает двухэтапный диалог для поиска текста с контекстом и последующим кликом."""
+    await update.message.reply_text(
+        "Начинаем умный поиск с последующим кликом.\n\n"
+        "Шаг 1: Укажите, какой текст вы хотите найти на экране и кликнуть?"
+    )
+    return SEARCH_TERM
+
+async def get_search_term_for_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает поисковый запрос и запрашивает контекст для клика."""
+    search_text = update.message.text
+    # Сохраняем поисковый запрос в контексте
+    context.user_data['search_text'] = search_text
+    
+    await update.message.reply_text(
+        f"Ищем текст: '{search_text}'\n\n"
+        "Шаг 2: Опишите контекст, где этот текст должен находиться? "
+        "Например: 'Это кнопка в правом верхнем углу'"
+    )
+    return CONTEXT_INFO
+
+async def get_context_and_search_for_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает контекст, выполняет поиск и запрашивает подтверждение для клика."""
+    context_info = update.message.text
+    search_text = context.user_data.get('search_text', '')
+    
+    # Сохраняем контекстную информацию
+    context.user_data['context_info'] = context_info
+    
+    logger.info(f"Поиск текста: '{search_text}' с контекстом: '{context_info}'")
+    
+    await update.message.reply_text(f"Начинаю поиск текста: '{search_text}' с контекстом: '{context_info}'")
+    
+    # Делаем скриншот
+    screenshot_path = await take_screenshot(update, context)
+    if not screenshot_path:
+        return ConversationHandler.END
+    
+    try:
+        # Ищем текст на скриншоте с учетом контекста
+        await update.message.reply_text("Анализирую скриншот...")
+        coordinates = find_text_on_image(screenshot_path, search_text, context_info)
+        
+        if coordinates:
+            x, y = coordinates
+            context.user_data['click_coordinates'] = (x, y)
+            
+            await update.message.reply_text(
+                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y})\n\n"
+                "Выполнить клик по этим координатам? (да/нет)"
+            )
+            
+            # Отправляем скриншот с отметкой найденного текста
+            result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
+                          if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
+            
+            if result_files:
+                latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
+                result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+                
+                if os.path.exists(result_path):
+                    await update.message.reply_photo(photo=open(result_path, 'rb'))
+                else:
+                    await update.message.reply_text("Результат найден, но изображение недоступно.")
+            else:
+                await update.message.reply_text("Результат найден, но изображение недоступно.")
+                
+            return CLICK_CONFIRM
+        else:
+            await update.message.reply_text(f"Текст '{search_text}' не найден на экране.")
+            context.user_data.clear()
+            return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Ошибка при поиске текста: {str(e)}")
+        await update.message.reply_text(f"Произошла ошибка при поиске текста: {str(e)}")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+async def execute_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Выполняет клик по найденным координатам после подтверждения."""
+    answer = update.message.text.lower()
+    
+    if answer in ['да', 'yes', 'y', 'д', 'так', '+']:
+        coordinates = context.user_data.get('click_coordinates')
+        search_text = context.user_data.get('search_text', '')
+        
+        if coordinates:
+            x, y = coordinates
+            try:
+                # Получаем размер экрана и размер скриншота для масштабирования
+                screen_width, screen_height = pyautogui.size()
+                
+                # Получаем размер последнего скриншота
+                screenshot_info = None
+                result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
+                              if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
+                
+                if result_files:
+                    latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
+                    original_path = os.path.join(working_dir, "text_search_tests", latest_test, "original.png")
+                    
+                    if os.path.exists(original_path):
+                        screenshot_img = Image.open(original_path)
+                        screenshot_width, screenshot_height = screenshot_img.size
+                        screenshot_info = (screenshot_width, screenshot_height)
+                
+                # Если не удалось получить размер последнего скриншота, используем текущий
+                if not screenshot_info:
+                    screenshot = pyautogui.screenshot()
+                    screenshot_width, screenshot_height = screenshot.size
+                    screenshot_info = (screenshot_width, screenshot_height)
+                
+                # Проверяем, нужно ли масштабирование
+                if screen_width != screenshot_width or screen_height != screenshot_height:
+                    # Масштабируем координаты
+                    scale_x = screen_width / screenshot_width
+                    scale_y = screen_height / screenshot_height
+                    
+                    original_x, original_y = x, y
+                    x = int(x * scale_x)
+                    y = int(y * scale_y)
+                    
+                    logger.info(f"Масштабирование координат: ({original_x}, {original_y}) -> ({x}, {y})")
+                    await update.message.reply_text(
+                        f"Размер экрана ({screen_width}x{screen_height}) отличается от размера скриншота "
+                        f"({screenshot_width}x{screenshot_height}). Масштабирую координаты: "
+                        f"({original_x}, {original_y}) -> ({x}, {y})"
+                    )
+                
+                # Логируем текущую позицию мыши перед кликом
+                current_mouse_x, current_mouse_y = pyautogui.position()
+                logger.info(f"Текущая позиция мыши перед кликом: ({current_mouse_x}, {current_mouse_y})")
+                
+                # Выполняем клик
+                await update.message.reply_text(f"Выполняю клик по координатам (X: {x}, Y: {y})...")
+                pyautogui.click(x, y)
+                
+                # Логируем позицию мыши после клика
+                after_mouse_x, after_mouse_y = pyautogui.position()
+                logger.info(f"Позиция мыши после клика: ({after_mouse_x}, {after_mouse_y})")
+                
+                await update.message.reply_text(f"Клик по тексту '{search_text}' выполнен успешно!")
+                
+                # Делаем новый скриншот после клика
+                time.sleep(1)  # Небольшая пауза для обновления экрана
+                screenshot_after = pyautogui.screenshot()
+                after_path = os.path.join(working_dir, "after_click.png")
+                screenshot_after.save(after_path)
+                
+                await update.message.reply_text("Вот результат после клика:")
+                await update.message.reply_photo(photo=open(after_path, 'rb'))
+            except Exception as e:
+                logger.error(f"Ошибка при выполнении клика: {str(e)}")
+                await update.message.reply_text(f"Произошла ошибка при выполнении клика: {str(e)}")
+        else:
+            await update.message.reply_text("Не найдены координаты для клика.")
+    else:
+        await update.message.reply_text("Клик отменен.")
+    
+    # Очищаем данные пользователя и завершаем диалог
+    context.user_data.clear()
+    return ConversationHandler.END
+
 def main() -> None:
     """Запускает бота."""
     logger.info("Запуск Telegram бота...")
@@ -494,6 +660,18 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     application.add_handler(smart_search_handler)
+    
+    # Регистрация ConversationHandler для умного поиска с кликом
+    smart_search_click_handler = ConversationHandler(
+        entry_points=[CommandHandler("smart_search_click", start_smart_search_click)],
+        states={
+            SEARCH_TERM: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_search_term_for_click)],
+            CONTEXT_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_context_and_search_for_click)],
+            CLICK_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, execute_click)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    application.add_handler(smart_search_click_handler)
     
     # Регистрация обработчика текстовых сообщений (должен быть после ConversationHandler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
