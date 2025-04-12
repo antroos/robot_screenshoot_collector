@@ -184,57 +184,94 @@ class MemoryManager:
             logger.error(f"Ошибка при создании скриншота области: {str(e)}")
             return None
     
-    def save_element(self, search_text, coordinates, match_percentage, screen_context="", context_info=None, element_size=None):
+    def save_element(self, search_text, coordinates, match_percentage, screen_context="", 
+                   context_info=None, element_size=None, screen_size=None, element_rect=None, screenshot_path=None):
         """
-        Сохраняет информацию о найденном элементе в память.
+        Сохраняет элемент в памяти.
         
         Args:
             search_text (str): Текст, который искали
             coordinates (tuple): Координаты найденного элемента (x, y)
-            match_percentage (int): Процент соответствия найденного текста запросу (0-100)
-            screen_context (str): Описание контекста экрана
+            match_percentage (int): Процент соответствия (0-100)
+            screen_context (str): Контекст экрана
             context_info (str, optional): Дополнительная контекстная информация
-            element_size (tuple, optional): Размер элемента (width, height)
+            element_size (tuple, optional): Размер элемента (ширина, высота)
+            screen_size (tuple, optional): Размер экрана (ширина, высота)
+            element_rect (tuple, optional): Прямоугольник элемента (x, y, ширина, высота)
+            screenshot_path (str, optional): Путь к файлу скриншота, если уже существует
             
         Returns:
             bool: True если успешно, иначе False
         """
         try:
-            # Получаем текущий скриншот
-            full_screenshot = pyautogui.screenshot()
-            screen_hash = self._get_screenshot_hash(full_screenshot)
-            
-            # Определяем размер экрана
-            screen_width, screen_height = full_screenshot.size
-            
+            # Получаем размеры экрана
+            if screen_size:
+                screen_width, screen_height = screen_size
+            else:
+                # Получаем текущий скриншот для определения размера экрана
+                full_screenshot = pyautogui.screenshot()
+                screen_width, screen_height = full_screenshot.size
+                
             # Генерируем уникальный ID для элемента
             element_id = self._generate_element_id(search_text, context_info)
             
-            # Определяем размер элемента, если не указан
-            if not element_size:
-                # По умолчанию используем область 100x50 пикселей вокруг координат
-                element_width = 100
-                element_height = 50
-                element_x = max(0, coordinates[0] - element_width // 2)
-                element_y = max(0, coordinates[1] - element_height // 2)
+            # Работаем с прямоугольником элемента
+            if element_rect:
+                element_x, element_y, element_width, element_height = element_rect
             else:
-                element_width, element_height = element_size
+                # Определяем размер элемента, если не указан
+                if not element_size:
+                    # По умолчанию используем область 100x50 пикселей вокруг координат
+                    element_width = 100
+                    element_height = 50
+                else:
+                    element_width, element_height = element_size
+                    
                 element_x = max(0, coordinates[0] - element_width // 2)
                 element_y = max(0, coordinates[1] - element_height // 2)
             
-            # Делаем скриншот области элемента
-            element_screenshot = self._capture_element_area(
-                element_x, element_y, element_width, element_height
-            )
+            # Вычисляем хеш скриншота
+            if screenshot_path and os.path.exists(screenshot_path):
+                try:
+                    img = Image.open(screenshot_path)
+                    screen_hash = self._get_screenshot_hash(img)
+                except Exception as e:
+                    logger.error(f"Ошибка при открытии скриншота из файла: {str(e)}")
+                    # Получаем текущий скриншот и вычисляем его хеш
+                    full_screenshot = pyautogui.screenshot()
+                    screen_hash = self._get_screenshot_hash(full_screenshot)
+            else:
+                # Получаем текущий скриншот и вычисляем его хеш
+                full_screenshot = pyautogui.screenshot()
+                screen_hash = self._get_screenshot_hash(full_screenshot)
+            
+            # Получаем область элемента из скриншота
+            if screenshot_path and os.path.exists(screenshot_path):
+                try:
+                    full_img = Image.open(screenshot_path)
+                    element_screenshot = full_img.crop((
+                        element_x, element_y, 
+                        min(element_x + element_width, full_img.width), 
+                        min(element_y + element_height, full_img.height)
+                    ))
+                except Exception as e:
+                    logger.error(f"Ошибка при вырезании элемента из файла: {str(e)}")
+                    element_screenshot = self._capture_element_area(
+                        element_x, element_y, element_width, element_height
+                    )
+            else:
+                element_screenshot = self._capture_element_area(
+                    element_x, element_y, element_width, element_height
+                )
             
             # Сохраняем скриншот элемента
             timestamp = int(time.time())
             screenshot_filename = f"{element_id}_{timestamp}.png"
-            screenshot_path = os.path.join(self.screenshots_dir, screenshot_filename)
+            screenshot_path_to_save = os.path.join(self.screenshots_dir, screenshot_filename)
             
             if element_screenshot:
-                element_screenshot.save(screenshot_path)
-                logger.info(f"Сохранен скриншот элемента: {screenshot_path}")
+                element_screenshot.save(screenshot_path_to_save)
+                logger.info(f"Сохранен скриншот элемента: {screenshot_path_to_save}")
             
             # Создаем запись о местоположении
             location_entry = {
@@ -252,11 +289,29 @@ class MemoryManager:
             for element in self.memory["elements"]:
                 if element["id"] == element_id:
                     # Элемент существует, добавляем новое местоположение
-                    element["locations"].append(location_entry)
-                    # Сортируем местоположения по времени, новые в начале
-                    element["locations"].sort(key=lambda x: x["timestamp"], reverse=True)
-                    # Обновляем поле last_found
+                    element["locations"].insert(0, location_entry)  # Добавляем в начало списка
+                    
+                    # Ограничиваем количество сохраненных местоположений
+                    if len(element["locations"]) > 10:  # Храним не более 10 местоположений
+                        # Удаляем лишние, но сначала проверяем, есть ли у них скриншоты
+                        for old_location in element["locations"][10:]:
+                            if old_location.get("screenshot"):
+                                old_screenshot_path = os.path.join(self.screenshots_dir, old_location["screenshot"])
+                                if os.path.exists(old_screenshot_path):
+                                    try:
+                                        os.remove(old_screenshot_path)
+                                        logger.info(f"Удален устаревший скриншот: {old_screenshot_path}")
+                                    except Exception as e:
+                                        logger.error(f"Ошибка при удалении устаревшего скриншота: {str(e)}")
+                        
+                        # Обрезаем список местоположений
+                        element["locations"] = element["locations"][:10]
+                    
+                    # Обновляем поле last_found и screen_context
                     element["last_found"] = timestamp
+                    if screen_context:
+                        element["screen_context"] = screen_context
+                    
                     # Обновляем success_rate
                     element["success_count"] += 1
                     element["total_searches"] += 1
@@ -279,6 +334,9 @@ class MemoryManager:
                     "success_rate": 1.0
                 }
                 self.memory["elements"].append(new_element)
+            
+            # Обновляем время последнего изменения
+            self.memory["last_updated"] = timestamp
             
             # Сохраняем обновленную память
             self._save_memory()
@@ -958,43 +1016,93 @@ class MemoryManager:
                 "ask_confirmation": False
             }
             
-            # Шаг 1: Прямой поиск по тексту и контексту
-            logger.info(f"Поиск элемента '{search_text}' в памяти напрямую")
-            direct_match = self.find_element(search_text, context_info, check_visually)
+            # Поиск всех элементов с похожим текстом в памяти
+            all_elements = self.get_all_elements()
+            text_matches = []
             
-            if direct_match:
-                result["coordinates"] = direct_match
-                result["found_in_memory"] = True
-                logger.info(f"Элемент '{search_text}' найден напрямую в памяти: {direct_match}")
+            # Фильтруем элементы с похожим текстом, игнорируя регистр
+            search_text_lower = search_text.lower()
+            for element in all_elements:
+                element_text = element.get("search_text", "").lower()
+                if search_text_lower in element_text or element_text in search_text_lower:
+                    # Если элемент найден по тексту, добавляем его в список
+                    text_matches.append(element)
+            
+            logger.info(f"Найдено {len(text_matches)} элементов с похожим текстом '{search_text}'")
+            
+            if not text_matches:
+                # Если элементы не найдены по тексту, возвращаем пустой результат
+                logger.info(f"Элементы с текстом '{search_text}' не найдены в памяти")
                 return result
-                
-            # Шаг 2: Поиск по контексту экрана
-            logger.info(f"Поиск элементов по контексту экрана")
-            matching_elements = self.find_elements_by_context(screen_context)
             
-            if matching_elements:
-                result["similar_elements"] = matching_elements
+            # Сортируем элементы по точности совпадения текста
+            # Чем меньше разница в длине, тем лучше совпадение
+            for element in text_matches:
+                element_text = element.get("search_text", "").lower()
+                text_difference = abs(len(element_text) - len(search_text_lower))
+                element["text_match"] = 1.0 - min(text_difference / max(len(element_text), len(search_text_lower)), 0.5)
+            
+            text_matches.sort(key=lambda x: x.get("text_match", 0), reverse=True)
+            
+            # Если есть контекст экрана, вычисляем сходство контекста для каждого элемента
+            if screen_context:
+                # Фильтруем элементы с высоким сходством контекста
+                context_matches = self.find_elements_by_context(screen_context)
                 
-                # Шаг 3: Проверяем, есть ли среди найденных элементов тот, который мы ищем
-                text_matches = [elem for elem in matching_elements 
-                               if search_text.lower() in elem.get("search_text", "").lower()]
+                # Сохраняем все похожие элементы для результата
+                result["similar_elements"] = context_matches
                 
-                if text_matches:
-                    # Нашли элемент с похожим текстом
-                    best_match = text_matches[0]  # Берем с наивысшим сходством контекста
+                # Находим пересечение элементов с похожим текстом и похожим контекстом
+                final_candidates = []
+                for text_element in text_matches:
+                    for context_element in context_matches:
+                        if text_element.get("id") == context_element.get("id"):
+                            # Объединяем элемент и сходство контекста
+                            text_element["context_similarity"] = context_element.get("context_similarity", 0)
+                            final_candidates.append(text_element)
+                            break
+                
+                # Если найдены элементы с похожим текстом и контекстом
+                if final_candidates:
+                    # Сортируем по комбинированному сходству текста и контекста
+                    for element in final_candidates:
+                        element["combined_score"] = (
+                            element.get("text_match", 0) * 0.6 + 
+                            element.get("context_similarity", 0) * 0.4
+                        )
                     
-                    # Шаг 4: Проверяем, присутствует ли элемент на текущем экране
+                    final_candidates.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
+                    
+                    # Берем элемент с наивысшим комбинированным сходством
+                    best_match = final_candidates[0]
+                    
+                    logger.info(f"Найден элемент с наилучшим совпадением: '{best_match.get('search_text')}', "
+                                f"сходство текста: {best_match.get('text_match', 0):.2f}, "
+                                f"сходство контекста: {best_match.get('context_similarity', 0):.2f}")
+                    
+                    # Если нужно визуально проверить наличие элемента на экране
                     if check_visually:
+                        logger.info(f"Проверяем наличие элемента на текущем экране...")
                         coordinates = self.verify_element_on_screen(best_match)
                         
                         if coordinates:
-                            # Элемент найден на экране
+                            # Элемент найден на текущем экране
+                            logger.info(f"Элемент '{best_match.get('search_text')}' найден на экране в координатах {coordinates}")
                             result["coordinates"] = coordinates
                             result["found_in_memory"] = True
-                            logger.info(f"Элемент '{search_text}' найден в памяти по контексту экрана: {coordinates}")
+                            
+                            # Обновляем статистику успешного поиска
+                            self.update_search_statistics(
+                                search_text=best_match.get("search_text", ""),
+                                context_info=best_match.get("context_info", ""),
+                                success=True
+                            )
+                            
                             return result
+                        else:
+                            logger.info(f"Элемент '{best_match.get('search_text')}' не найден на текущем экране при визуальной проверке")
                     else:
-                        # Берем последние известные координаты
+                        # Если визуальная проверка не требуется, берем последние известные координаты
                         if best_match.get("locations"):
                             saved_coords = best_match["locations"][0]["coordinates"]
                             saved_width, saved_height = best_match["locations"][0]["screen_size"]
@@ -1013,15 +1121,79 @@ class MemoryManager:
                             result["coordinates"] = (scaled_x, scaled_y)
                             result["found_in_memory"] = True
                             result["ask_confirmation"] = ask_confirmation
-                            logger.info(f"Элемент '{search_text}' найден в памяти по контексту без визуальной проверки: {(scaled_x, scaled_y)}")
+                            
+                            # Обновляем статистику успешного поиска
+                            self.update_search_statistics(
+                                search_text=best_match.get("search_text", ""),
+                                context_info=best_match.get("context_info", ""),
+                                success=True
+                            )
+                            
+                            logger.info(f"Элемент '{best_match.get('search_text')}' найден в памяти без визуальной проверки: {(scaled_x, scaled_y)}")
                             return result
+                else:
+                    # Если нет элементов с похожим контекстом, проверяем только элементы с похожим текстом
+                    logger.info(f"Нет элементов с похожим текстом И контекстом. Проверяем только по тексту.")
+                    best_match = text_matches[0]
+                    
+                    # Если нужно визуально проверить наличие элемента на экране
+                    if check_visually:
+                        logger.info(f"Проверяем наличие элемента на текущем экране...")
+                        coordinates = self.verify_element_on_screen(best_match)
+                        
+                        if coordinates:
+                            # Элемент найден на текущем экране
+                            logger.info(f"Элемент '{best_match.get('search_text')}' найден на экране в координатах {coordinates}")
+                            result["coordinates"] = coordinates
+                            result["found_in_memory"] = True
+                            
+                            # Обновляем статистику успешного поиска
+                            self.update_search_statistics(
+                                search_text=best_match.get("search_text", ""),
+                                context_info=best_match.get("context_info", ""),
+                                success=True
+                            )
+                            
+                            return result
+            else:
+                # Если нет контекста экрана, проверяем только элементы с похожим текстом
+                logger.info(f"Нет контекста экрана. Проверяем только по тексту.")
+                best_match = text_matches[0]
+                
+                # Если нужно визуально проверить наличие элемента на экране
+                if check_visually:
+                    logger.info(f"Проверяем наличие элемента на текущем экране...")
+                    coordinates = self.verify_element_on_screen(best_match)
+                    
+                    if coordinates:
+                        # Элемент найден на текущем экране
+                        logger.info(f"Элемент '{best_match.get('search_text')}' найден на экране в координатах {coordinates}")
+                        result["coordinates"] = coordinates
+                        result["found_in_memory"] = True
+                        
+                        # Обновляем статистику успешного поиска
+                        self.update_search_statistics(
+                            search_text=best_match.get("search_text", ""),
+                            context_info=best_match.get("context_info", ""),
+                            success=True
+                        )
+                        
+                        return result
+            
+            # Если элемент не найден на экране, обновляем статистику неудачного поиска
+            if text_matches:
+                self.update_search_statistics(
+                    search_text=text_matches[0].get("search_text", ""),
+                    context_info=text_matches[0].get("context_info", ""),
+                    success=False
+                )
             
             # Ничего не нашли или элемент не обнаружен на текущем экране
-            logger.info(f"Элемент '{search_text}' не найден в памяти для текущего контекста")
+            logger.info(f"Элемент '{search_text}' не найден в памяти для текущего контекста или не визуально не подтвержден")
             return result
             
         except Exception as e:
-            logger.error(f"Ошибка при поиске элемента по тексту и контексту: {str(e)}")
+            logger.error(f"Ошибка при поиске элемента по тексту и контексту: {str(e)}", exc_info=True)
             return {"coordinates": None, "found_in_memory": False, "similar_elements": [], "screen_context": screen_context, "ask_confirmation": False}
 
 # Функция для тестирования

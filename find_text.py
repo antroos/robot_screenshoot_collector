@@ -559,23 +559,84 @@ def find_text_on_image(img_path, search_text, context_info=None):
         logger.error(f"Файл изображения не найден: {img_path}")
         return None
     
-    # Сначала проверяем в памяти, есть ли этот элемент
-    logger.info(f"Проверяем элемент '{search_text}' в памяти")
-    memory_coordinates = memory_manager.find_element(search_text, context_info)
+    # Загружаем изображение
+    img = Image.open(img_path)
+    screen_img_base64 = image_to_base64(img)
     
-    if memory_coordinates:
-        logger.info(f"Элемент '{search_text}' найден в памяти, координаты: {memory_coordinates}")
-        return memory_coordinates
+    # Анализируем общий контекст скриншота для более интеллектуального поиска
+    logger.info(f"Анализируем контекст скриншота для поиска '{search_text}'")
+    screen_context = analyze_screen_context(screen_img_base64)
+    logger.info(f"Контекст скриншота: {screen_context[:150]}...")
+    
+    # Сначала проверяем в памяти, есть ли этот элемент с учетом контекста экрана
+    logger.info(f"Выполняем интеллектуальный поиск элемента '{search_text}' в памяти")
+    memory_result = memory_manager.find_element_by_text(
+        search_text=search_text,
+        screen_context=screen_context,
+        context_info=context_info,
+        check_visually=True
+    )
+    
+    # Если элемент найден в памяти и подтвержден визуально
+    if memory_result["coordinates"]:
+        logger.info(f"Элемент '{search_text}' найден в памяти и подтвержден визуально: {memory_result['coordinates']}")
+        # Создаем новые папки для текущего теста, чтобы сохранить результат
+        test_folder, squares_folder, test_num = create_test_folder()
         
-    logger.info(f"Элемент '{search_text}' не найден в памяти. Начинаем полный поиск")
+        # Сохраняем информацию о тесте
+        info_path = os.path.join(test_folder, "info.txt")
+        with open(info_path, 'w') as f:
+            f.write(f"Поисковый запрос: {search_text}\n")
+            if context_info:
+                f.write(f"Контекстная информация: {context_info}\n")
+            f.write(f"Контекст скриншота: {screen_context}\n")
+            f.write(f"Результат: Найден из памяти с использованием контекста.\n")
+            f.write(f"Координаты: {memory_result['coordinates']}\n")
+            f.write(f"Соответствие: 100%\n")
+        
+        # Сохраняем результат
+        width, height = img.size
+        result_img = img.copy()
+        draw = ImageDraw.Draw(result_img)
+        x, y = memory_result['coordinates']
+        
+        # Рисуем перекрестие
+        draw.line((x-20, y, x+20, y), fill=(255, 0, 0), width=2)
+        draw.line((x, y-20, x, y+20), fill=(255, 0, 0), width=2)
+        
+        # Рисуем круг
+        draw.ellipse((x-30, y-30, x+30, y+30), outline=(255, 0, 0), width=2)
+        
+        # Добавляем текст
+        try:
+            font = ImageFont.truetype("arial.ttf", 20)
+        except IOError:
+            font = ImageFont.load_default()
+        
+        draw.text((x+40, y-10), f"{search_text}", fill=(255, 0, 0), font=font)
+        
+        # Сохраняем результат
+        result_path = os.path.join(test_folder, "result.png")
+        result_img.save(result_path)
+        logger.info(f"Результат сохранен в {result_path}")
+        
+        # Сохраняем координаты
+        coords_path = os.path.join(test_folder, "coordinates.txt")
+        with open(coords_path, 'w') as f:
+            f.write(f"{x},{y}")
+        logger.info(f"Координаты сохранены в {coords_path}")
+        
+        return memory_result['coordinates']
+    else:
+        logger.info(f"Элемент '{search_text}' не найден в памяти или не подтвержден визуально. Выполняем полный поиск.")
     
+    # Если элемент не найден в памяти с учетом контекста, выполняем полный поиск
     # Создаем новые папки для текущего теста
     test_folder, squares_folder, test_num = create_test_folder()
     print(f"Starting text search test #{test_num} in folder: {test_folder}")
     logger.info(f"Запуск теста поиска текста #{test_num} в папке: {test_folder}")
     
     # Загружаем изображение с экраном
-    img = Image.open(img_path)
     width, height = img.size
     print(f"Загружено изображение размером {width}x{height}")
     logger.info(f"Загружено изображение размером {width}x{height}")
@@ -583,13 +644,6 @@ def find_text_on_image(img_path, search_text, context_info=None):
     # Сохраняем оригинальное изображение в папке теста
     original_path = os.path.join(test_folder, "original.png")
     img.save(original_path)
-    
-    # Кодируем изображение в base64 для API
-    screen_img_base64 = image_to_base64(img)
-    
-    # Анализируем общий контекст скриншота
-    screen_context = analyze_screen_context(screen_img_base64)
-    logger.info("Контекст скриншота проанализирован")
     
     # Проверяем наличие текста на полном изображении
     if not check_text_in_image(screen_img_base64, search_text, context_info):
@@ -630,8 +684,14 @@ def find_text_on_image(img_path, search_text, context_info=None):
             match_percentage = 90  # По умолчанию, если не удалось прочитать
         
         # Определяем размер элемента из найденных координат
-        # (используем прямоугольник 50x50 пикселей вокруг найденной точки)
         element_size = (50, 50)
+        
+        # Получаем прямоугольник элемента (приблизительно)
+        element_x = max(0, coordinates[0] - 25)
+        element_y = max(0, coordinates[1] - 25)
+        element_width = min(50, width - element_x)
+        element_height = min(50, height - element_y)
+        element_rect = (element_x, element_y, element_width, element_height)
         
         # Сохраняем найденный элемент в памяти
         memory_manager.save_element(
@@ -640,7 +700,10 @@ def find_text_on_image(img_path, search_text, context_info=None):
             match_percentage=match_percentage,
             screen_context=screen_context,
             context_info=context_info,
-            element_size=element_size
+            element_size=element_size,
+            screen_size=(width, height),
+            element_rect=element_rect,
+            screenshot_path=img_path
         )
     else:
         # Обновляем статистику поиска в памяти (неудачный поиск)
