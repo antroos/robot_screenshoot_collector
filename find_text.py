@@ -401,7 +401,7 @@ def find_text_recursively(img, screen_img_base64, search_text, test_folder, squa
     """Рекурсивно ищет текст на изображении путем деления изображения на части"""
     
     # Максимальная глубина рекурсии
-    MAX_DEPTH = 4
+    MAX_DEPTH = 6
     
     # Предотвращаем слишком глубокую рекурсию
     if depth > MAX_DEPTH:
@@ -411,6 +411,11 @@ def find_text_recursively(img, screen_img_base64, search_text, test_folder, squa
     logger.info(f"Проверка изображения размером {width}x{height} со смещением {offset}, глубина={depth}")
     print(f"Checking image of size {width}x{height} at offset {offset}, depth={depth}")
     
+    # Сохраняем текущий квадрат для отладки
+    square_path = os.path.join(squares_folder, f"square_d{depth}_x{offset[0]}_y{offset[1]}.png")
+    img.save(square_path)
+    logger.info(f"Сохранен квадрат для отладки: {square_path}")
+    
     # Кодируем изображение для проверки текста
     img_base64 = image_to_base64(img)
     
@@ -418,18 +423,15 @@ def find_text_recursively(img, screen_img_base64, search_text, test_folder, squa
     if check_text_in_image(img_base64, search_text, context_info):
         logger.info(f"Текст '{search_text}' найден в части изображения на глубине {depth}")
         
-        # Если изображение достаточно маленькое или достигнута максимальная глубина
-        if width <= 200 or height <= 200 or depth == MAX_DEPTH:
+        # Для повышения точности всегда выполняем дополнительное деление, 
+        # пока не достигнем минимального размера или максимальной глубины
+        if width <= 50 or height <= 50 or depth == MAX_DEPTH:
             # Определяем процент соответствия
             match_percentage = get_text_match_percentage(img_base64, search_text, context_info)
             
             # Считаем координаты центра
             center_x = offset[0] + width // 2
             center_y = offset[1] + height // 2
-            
-            # Сохраняем найденную часть изображения
-            square_path = os.path.join(squares_folder, f"square_d{depth}_x{offset[0]}_y{offset[1]}.png")
-            img.save(square_path)
             
             logger.info(f"Найден текст с соответствием {match_percentage}% на координатах ({center_x}, {center_y})")
             
@@ -467,6 +469,12 @@ def find_text_recursively(img, screen_img_base64, search_text, test_folder, squa
                          fill='red', 
                          font=font)
                 
+                # Рисуем рамку вокруг найденного текста
+                draw.rectangle([
+                    (offset[0], offset[1]),
+                    (offset[0] + width, offset[1] + height)
+                ], outline='green', width=2)
+                
                 # Сохраняем результат
                 result_path = os.path.join(test_folder, "result.png")
                 full_img.save(result_path)
@@ -480,6 +488,8 @@ def find_text_recursively(img, screen_img_base64, search_text, test_folder, squa
                     f.write(f"Контекст скриншота: {screen_context}\n")
                     f.write(f"Найден в координатах: ({center_x}, {center_y})\n")
                     f.write(f"Соответствие: {match_percentage}%\n")
+                    f.write(f"Глубина рекурсии: {depth}\n")
+                    f.write(f"Размер области: {width}x{height}\n")
                     f.write(f"Время: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
                 
                 # Сохраняем координаты

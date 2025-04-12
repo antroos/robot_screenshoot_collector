@@ -38,12 +38,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"Привет, {user.first_name}! Я бот для поиска текста на экране.\n\n"
         "Доступные команды:\n"
-        "/search <текст> - Найти текст на экране\n"
-        "/search_with_context <текст> | <контекст> - Найти текст с дополнительным контекстом\n"
         "/smart_search - Начать двухэтапный поиск с контекстом\n"
         "/smart_search_click - Начать двухэтапный поиск с кликом\n"
-        "/click <текст> - Найти и кликнуть на текст\n"
-        "/type <текст для поиска> | <текст для ввода> - Найти текст, кликнуть и ввести текст\n"
         "/help - Показать справку"
     )
 
@@ -51,14 +47,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """Отправляет справку при команде /help."""
     await update.message.reply_text(
         "Доступные команды:\n\n"
-        "/search <текст> - Найти текст на экране\n"
-        "/search_with_context <текст> | <контекст> - Найти текст с дополнительным контекстом\n"
-        "Пример: /search_with_context Search | Текст невеликий і є плейсхолдером у полі вводу\n\n"
         "/smart_search - Начать двухэтапный поиск с контекстом\n"
+        "Эта команда запросит у вас текст для поиска, а затем контекст, где этот текст должен находиться.\n\n"
         "/smart_search_click - Начать двухэтапный поиск с кликом\n"
-        "/click <текст> - Найти и кликнуть на текст\n"
-        "/type <текст для поиска> | <текст для ввода> - Найти текст, кликнуть и ввести текст\n"
-        "/anthropic_click <текст> - Найти и кликнуть на текст с использованием Anthropic API"
+        "Эта команда найдет текст на экране с учетом контекста и выполнит клик по найденным координатам.\n\n"
+        "/start - Перезапустить бота\n"
+        "/help - Показать эту справку"
     )
 
 async def take_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -461,14 +455,16 @@ async def get_context_and_search(update: Update, context: ContextTypes.DEFAULT_T
         logger.error(f"Ошибка при поиске текста: {str(e)}")
         await update.message.reply_text(f"Произошла ошибка при поиске текста: {str(e)}")
     
-    # Очищаем данные пользователя и завершаем диалог
+    # Очищаем данные пользователя, предлагаем следующее действие и завершаем диалог
     context.user_data.clear()
+    await suggest_next_action(update, context)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отменяет диалог умного поиска."""
     await update.message.reply_text("Поиск отменен.")
     context.user_data.clear()
+    await suggest_next_action(update, context)
     return ConversationHandler.END
 
 async def start_smart_search_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -507,6 +503,7 @@ async def get_context_and_search_for_click(update: Update, context: ContextTypes
     # Делаем скриншот
     screenshot_path = await take_screenshot(update, context)
     if not screenshot_path:
+        await suggest_next_action(update, context)
         return ConversationHandler.END
     
     try:
@@ -542,11 +539,13 @@ async def get_context_and_search_for_click(update: Update, context: ContextTypes
         else:
             await update.message.reply_text(f"Текст '{search_text}' не найден на экране.")
             context.user_data.clear()
+            await suggest_next_action(update, context)
             return ConversationHandler.END
     except Exception as e:
         logger.error(f"Ошибка при поиске текста: {str(e)}")
         await update.message.reply_text(f"Произошла ошибка при поиске текста: {str(e)}")
         context.user_data.clear()
+        await suggest_next_action(update, context)
         return ConversationHandler.END
 
 async def execute_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -630,9 +629,19 @@ async def execute_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         await update.message.reply_text("Клик отменен.")
     
-    # Очищаем данные пользователя и завершаем диалог
+    # Очищаем данные пользователя, предлагаем следующее действие и завершаем диалог
     context.user_data.clear()
+    await suggest_next_action(update, context)
     return ConversationHandler.END
+
+async def suggest_next_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Предлагает пользователю выбрать следующее действие"""
+    await update.message.reply_text(
+        "Что бы вы хотели сделать дальше?\n\n"
+        "/smart_search - Найти текст на экране\n"
+        "/smart_search_click - Найти и кликнуть на текст\n"
+        "/help - Показать справку"
+    )
 
 def main() -> None:
     """Запускает бота."""
@@ -644,11 +653,6 @@ def main() -> None:
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("search", search_command))
-    application.add_handler(CommandHandler("search_with_context", search_with_context_command))
-    application.add_handler(CommandHandler("click", click_command))
-    application.add_handler(CommandHandler("anthropic_click", anthropic_click_command))
-    application.add_handler(CommandHandler("type", type_command))
     
     # Регистрация ConversationHandler для умного поиска
     smart_search_handler = ConversationHandler(
@@ -673,8 +677,8 @@ def main() -> None:
     )
     application.add_handler(smart_search_click_handler)
     
-    # Регистрация обработчика текстовых сообщений (должен быть после ConversationHandler)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
+    # Регистрация обработчика для всех остальных текстовых сообщений
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda update, context: suggest_next_action(update, context)))
 
     # Запуск бота
     logger.info("Бот запущен и прослушивает запросы")
