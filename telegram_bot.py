@@ -3,12 +3,15 @@
 import os
 import logging
 import pyautogui
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 import time
 from find_text import find_text_on_image, load_api_keys
+from memory_manager import MemoryManager
 from robot_controller import AnthropicComputerController
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+import datetime
+import json
 
 # Настройка логирования
 logging.basicConfig(
@@ -32,6 +35,16 @@ logger.info(f"Рабочая директория: {working_dir}")
 # Состояния для ConversationHandler
 SEARCH_TERM, CONTEXT_INFO, CLICK_CONFIRM = range(3)
 
+# Состояния для просмотра содержимого памяти
+MEMORY_BROWSE_ELEMENT, MEMORY_ELEMENT_DETAILS = range(3, 5)
+
+# Определение состояний для просмотра памяти
+SHOW_MEMORY_LIST, SHOW_MEMORY_DETAIL, MEMORY_ACTION = range(10, 13)
+
+# Инициализация менеджера памяти
+memory_manager = MemoryManager()
+logger.info("Менеджер памяти инициализирован для Telegram бота")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет приветственное сообщение при команде /start."""
     user = update.effective_user
@@ -51,6 +64,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Эта команда запросит у вас текст для поиска, а затем контекст, где этот текст должен находиться.\n\n"
         "/smart_search_click - Начать двухэтапный поиск с кликом\n"
         "Эта команда найдет текст на экране с учетом контекста и выполнит клик по найденным координатам.\n\n"
+        "/memory_stats - Показать статистику системы памяти\n"
+        "Отображает количество сохраненных элементов и другую информацию о памяти.\n\n"
+        "/memory_elements - Показать все запомненные элементы\n"
+        "Отображает список всех элементов, сохраненных в памяти.\n\n"
+        "/memory_clean - Очистить устаревшие записи из памяти\n"
+        "Удаляет старые и редко используемые элементы из памяти.\n\n"
+        "/memory_debug - Проверить содержимое файла памяти напрямую\n"
+        "Техническая команда для диагностики проблем с памятью.\n\n"
+        "/memory_browse - Просмотр и управление элементами в памяти\n"
+        "Просмотр списка элементов и детальной информации о них.\n\n"
         "/start - Перезапустить бота\n"
         "/help - Показать эту справку"
     )
@@ -428,27 +451,92 @@ async def get_context_and_search(update: Update, context: ContextTypes.DEFAULT_T
     try:
         # Ищем текст на скриншоте с учетом контекста
         await update.message.reply_text("Анализирую скриншот...")
+        
+        # Запоминаем время начала поиска
+        start_time = time.time()
         coordinates = find_text_on_image(screenshot_path, search_text, context_info)
+        # Вычисляем затраченное время
+        search_time = time.time() - start_time
         
         if coordinates:
             x, y = coordinates
-            await update.message.reply_text(
+            
+            # Проверяем, был ли результат найден в памяти
+            from_memory = search_time < 1.0  # Если поиск занял менее 1 секунды, считаем что из памяти
+            
+            result_text = (
                 f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y})"
             )
-            # Отправляем скриншот с отметкой найденного текста
-            result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
-                          if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
-            
-            if result_files:
-                latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
-                result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+            if from_memory:
+                result_text += " 🧠 (найдено из памяти)"
+            else:
+                result_text += " 🔍 (полный поиск)"
                 
-                if os.path.exists(result_path):
-                    await update.message.reply_photo(photo=open(result_path, 'rb'))
+            result_text += f"\n⏱ Время поиска: {search_time:.2f} сек."
+            
+            await update.message.reply_text(result_text)
+            
+            # Если результат из памяти, визуализируем его на скриншоте
+            if from_memory:
+                # Создаем копию текущего скриншота
+                memory_result_path = os.path.join(working_dir, "memory_result.png")
+                full_screenshot = Image.open(screenshot_path)
+                draw = ImageDraw.Draw(full_screenshot)
+                
+                # Рисуем красную точку в найденных координатах
+                dot_size = 5
+                draw.ellipse(
+                    [(x - dot_size, y - dot_size), 
+                     (x + dot_size, y + dot_size)], 
+                    fill='red'
+                )
+                
+                # Рисуем окружность
+                circle_size = 30
+                draw.ellipse(
+                    [(x - circle_size, y - circle_size), 
+                     (x + circle_size, y + circle_size)], 
+                    outline='red',
+                    width=3
+                )
+                
+                # Добавляем текст с координатами
+                try:
+                    font = ImageFont.truetype("Arial", 20)
+                except:
+                    font = ImageFont.load_default()
+                
+                draw.text((x + circle_size + 10, y - 10), 
+                         f"({x}, {y})", 
+                         fill='red', 
+                         font=font)
+                
+                # Добавляем метку "Из памяти"
+                draw.text((x + circle_size + 10, y + 20), 
+                         "Из памяти 🧠", 
+                         fill='green', 
+                         font=font)
+                
+                # Сохраняем результат
+                full_screenshot.save(memory_result_path)
+                
+                # Отправляем скриншот с отметкой найденного текста
+                await update.message.reply_photo(photo=open(memory_result_path, 'rb'))
+            else:
+                # Отправляем скриншот с отметкой найденного текста (стандартный результат)
+                result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
+                              if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
+                
+                if result_files:
+                    latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
+                    result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+                    
+                    if os.path.exists(result_path):
+                        await update.message.reply_photo(photo=open(result_path, 'rb'))
+                    else:
+                        await update.message.reply_text("Результат найден, но изображение недоступно.")
                 else:
                     await update.message.reply_text("Результат найден, но изображение недоступно.")
-            else:
-                await update.message.reply_text("Результат найден, но изображение недоступно.")
         else:
             await update.message.reply_text(f"Текст '{search_text}' не найден на экране.")
     except Exception as e:
@@ -509,32 +597,95 @@ async def get_context_and_search_for_click(update: Update, context: ContextTypes
     try:
         # Ищем текст на скриншоте с учетом контекста
         await update.message.reply_text("Анализирую скриншот...")
+        
+        # Запоминаем время начала поиска
+        start_time = time.time()
         coordinates = find_text_on_image(screenshot_path, search_text, context_info)
+        # Вычисляем затраченное время
+        search_time = time.time() - start_time
         
         if coordinates:
             x, y = coordinates
             context.user_data['click_coordinates'] = (x, y)
             
-            await update.message.reply_text(
-                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y})\n\n"
-                "Выполнить клик по этим координатам? (да/нет)"
+            # Проверяем, был ли результат найден в памяти
+            from_memory = search_time < 1.0  # Если поиск занял менее 1 секунды, считаем что из памяти
+            
+            result_text = (
+                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y})"
             )
-            
-            # Отправляем скриншот с отметкой найденного текста
-            result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
-                          if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
-            
-            if result_files:
-                latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
-                result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+            if from_memory:
+                result_text += " 🧠 (найдено из памяти)"
+            else:
+                result_text += " 🔍 (полный поиск)"
                 
-                if os.path.exists(result_path):
-                    await update.message.reply_photo(photo=open(result_path, 'rb'))
+            result_text += f"\n⏱ Время поиска: {search_time:.2f} сек."
+            result_text += "\n\nВыполнить клик по этим координатам? (да/нет)"
+            
+            await update.message.reply_text(result_text)
+            
+            # Если результат из памяти, визуализируем его на скриншоте
+            if from_memory:
+                # Создаем копию текущего скриншота
+                memory_result_path = os.path.join(working_dir, "memory_result.png")
+                full_screenshot = Image.open(screenshot_path)
+                draw = ImageDraw.Draw(full_screenshot)
+                
+                # Рисуем красную точку в найденных координатах
+                dot_size = 5
+                draw.ellipse(
+                    [(x - dot_size, y - dot_size), 
+                     (x + dot_size, y + dot_size)], 
+                    fill='red'
+                )
+                
+                # Рисуем окружность
+                circle_size = 30
+                draw.ellipse(
+                    [(x - circle_size, y - circle_size), 
+                     (x + circle_size, y + circle_size)], 
+                    outline='red',
+                    width=3
+                )
+                
+                # Добавляем текст с координатами
+                try:
+                    font = ImageFont.truetype("Arial", 20)
+                except:
+                    font = ImageFont.load_default()
+                
+                draw.text((x + circle_size + 10, y - 10), 
+                         f"({x}, {y})", 
+                         fill='red', 
+                         font=font)
+                
+                # Добавляем метку "Из памяти"
+                draw.text((x + circle_size + 10, y + 20), 
+                         "Из памяти 🧠", 
+                         fill='green', 
+                         font=font)
+                
+                # Сохраняем результат
+                full_screenshot.save(memory_result_path)
+                
+                # Отправляем скриншот с отметкой найденного текста
+                await update.message.reply_photo(photo=open(memory_result_path, 'rb'))
+            else:
+                # Отправляем скриншот с отметкой найденного текста
+                result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
+                              if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
+                
+                if result_files:
+                    latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
+                    result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+                    
+                    if os.path.exists(result_path):
+                        await update.message.reply_photo(photo=open(result_path, 'rb'))
+                    else:
+                        await update.message.reply_text("Результат найден, но изображение недоступно.")
                 else:
                     await update.message.reply_text("Результат найден, но изображение недоступно.")
-            else:
-                await update.message.reply_text("Результат найден, но изображение недоступно.")
-                
+                    
             return CLICK_CONFIRM
         else:
             await update.message.reply_text(f"Текст '{search_text}' не найден на экране.")
@@ -643,6 +794,552 @@ async def suggest_next_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         "/help - Показать справку"
     )
 
+async def memory_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показывает статистику системы памяти."""
+    logger.info("Запрошена статистика системы памяти")
+    
+    stats = memory_manager.get_memory_stats()
+    
+    if stats:
+        await update.message.reply_text(
+            f"📊 Статистика системы памяти:\n\n"
+            f"📝 Всего элементов: {stats['total_elements']}\n"
+            f"📍 Всего местоположений: {stats['total_locations']}\n"
+            f"⭐ Средняя точность: {stats['avg_success_rate']:.2f}%\n"
+            f"🖼 Скриншотов: {stats['screenshot_count']} (общий размер: {stats['screenshot_size_kb']:.2f} KB)\n"
+            f"💾 Размер файла памяти: {stats['memory_file_size_kb']:.2f} KB\n"
+            f"🔄 Последнее обновление: {stats['last_updated']}"
+        )
+    else:
+        await update.message.reply_text("❌ Не удалось получить статистику памяти.")
+
+async def memory_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Проверяет содержимое файла памяти напрямую."""
+    logger.info("Запрошена проверка файла памяти напрямую")
+    
+    memory_file = memory_manager.memory_file
+    
+    try:
+        # Проверяем существование файла
+        if not os.path.exists(memory_file):
+            await update.message.reply_text(f"❌ Файл памяти не найден: {memory_file}")
+            return
+        
+        # Получаем информацию о файле
+        file_size = os.path.getsize(memory_file) / 1024  # размер в KB
+        file_date = datetime.datetime.fromtimestamp(os.path.getmtime(memory_file)).strftime('%Y-%m-%d %H:%M:%S')
+        
+        await update.message.reply_text(
+            f"📄 Информация о файле памяти:\n\n"
+            f"📁 Путь: {memory_file}\n"
+            f"📏 Размер: {file_size:.2f} KB\n"
+            f"🕒 Последнее изменение: {file_date}\n\n"
+            f"Чтение содержимого файла..."
+        )
+        
+        # Читаем и анализируем содержимое файла
+        with open(memory_file, 'r', encoding='utf-8') as f:
+            memory_data = json.load(f)
+        
+        # Подготовка основной информации
+        elements_count = len(memory_data.get('elements', []))
+        last_updated = memory_data.get('last_updated', 'Неизвестно')
+        version = memory_data.get('version', 'Неизвестно')
+        
+        summary = (
+            f"📋 Содержимое файла памяти:\n\n"
+            f"🔢 Количество элементов: {elements_count}\n"
+            f"🔄 Последнее обновление: {last_updated}\n"
+            f"📊 Версия формата: {version}\n\n"
+        )
+        
+        await update.message.reply_text(summary)
+        
+        # Отправляем детальную информацию о каждом элементе
+        if elements_count > 0:
+            details = "🔍 Детальная информация о элементах:\n\n"
+            
+            for i, element in enumerate(memory_data.get('elements', []), 1):
+                search_text = element.get('search_text', 'Неизвестно')
+                context_info = element.get('context_info', '')
+                locations_count = len(element.get('locations', []))
+                success_rate = element.get('success_rate', 0) * 100
+                
+                element_details = (
+                    f"{i}. '{search_text}'\n"
+                    f"   Контекст: '{context_info[:50]}...'\n"
+                    f"   Позиций: {locations_count}, Точность: {success_rate:.0f}%\n\n"
+                )
+                
+                # Чтобы не превышать ограничение на размер сообщения
+                if len(details + element_details) > 4000:
+                    await update.message.reply_text(details)
+                    details = element_details
+                else:
+                    details += element_details
+            
+            if details:
+                await update.message.reply_text(details)
+        
+    except json.JSONDecodeError:
+        await update.message.reply_text(f"❌ Ошибка при чтении файла памяти: неверный формат JSON")
+    except Exception as e:
+        logger.error(f"Ошибка при проверке файла памяти: {str(e)}")
+        await update.message.reply_text(f"❌ Произошла ошибка при проверке файла памяти: {str(e)}")
+
+async def memory_clean_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Очищает устаревшие записи из памяти."""
+    logger.info("Запрошена очистка памяти")
+    
+    # Параметры для очистки
+    max_age_days = 30  # По умолчанию - 30 дней
+    min_success_rate = 0.2  # По умолчанию - 20% успешных поисков
+    
+    # Проверяем, переданы ли аргументы
+    if context.args:
+        try:
+            if len(context.args) >= 1:
+                max_age_days = int(context.args[0])
+            if len(context.args) >= 2:
+                min_success_rate = float(context.args[1])
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Ошибка в формате аргументов. Используйте: /memory_clean [макс_дней] [мин_точность]"
+            )
+            return
+    
+    # Выполняем очистку
+    removed_count = memory_manager.clean_old_entries(max_age_days, min_success_rate)
+    
+    await update.message.reply_text(
+        f"🧹 Очистка памяти завершена!\n\n"
+        f"🗑 Удалено элементов: {removed_count}\n"
+        f"⏳ Макс. возраст записей: {max_age_days} дней\n"
+        f"📈 Мин. коэффициент успеха: {min_success_rate:.2f}"
+    )
+    
+    # Обновляем статистику после очистки
+    stats = memory_manager.get_memory_stats()
+    
+    if stats:
+        await update.message.reply_text(
+            f"📊 Статистика после очистки:\n\n"
+            f"📝 Всего элементов: {stats['total_elements']}\n"
+            f"📍 Всего местоположений: {stats['total_locations']}\n"
+            f"🖼 Скриншотов: {stats['screenshot_count']}"
+        )
+
+async def memory_browse_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Команда для просмотра и управления элементами в памяти."""
+    logger.info("Запущен просмотр элементов памяти")
+    
+    try:
+        # Получаем все элементы из памяти
+        elements = memory_manager.get_all_elements()
+        
+        if not elements:
+            await update.message.reply_text("📭 В памяти нет сохраненных элементов.")
+            return ConversationHandler.END
+        
+        # Сохраняем элементы в контексте для дальнейшего использования
+        context.user_data['memory_elements'] = elements
+        
+        # Создаем список элементов с кнопками для выбора
+        keyboard = []
+        message_text = "📋 Выберите элемент для просмотра:\n\n"
+        
+        for i, element in enumerate(elements, 1):
+            search_text = element.get("search_text", "Неизвестно")
+            context_info = element.get("context_info", "")
+            success_rate = element.get("success_rate", 0) * 100
+            
+            # Добавляем информацию в сообщение
+            message_text += f"{i}. '{search_text}'\n   Контекст: '{context_info[:30]}...', Точность: {success_rate:.0f}%\n\n"
+            
+            # Добавляем кнопку для выбора элемента
+            keyboard.append([InlineKeyboardButton(f"{i}. {search_text[:20]}", callback_data=f"memory_view_{i-1}")])
+        
+        # Добавляем кнопку отмены
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="memory_cancel")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(message_text, reply_markup=reply_markup)
+        
+        return SHOW_MEMORY_LIST
+        
+    except Exception as e:
+        logger.error(f"Ошибка при просмотре элементов памяти: {str(e)}")
+        await update.message.reply_text(f"❌ Произошла ошибка: {str(e)}")
+        return ConversationHandler.END
+
+async def memory_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает выбор элемента из списка памяти."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "memory_cancel":
+        await query.edit_message_text("❌ Просмотр памяти отменен.")
+        return ConversationHandler.END
+    
+    try:
+        # Проверяем, что это выбор элемента из списка
+        if not query.data.startswith("memory_view_"):
+            logger.error(f"Неизвестный тип callback_data: {query.data}")
+            await query.edit_message_text("❌ Неизвестная команда.")
+            return ConversationHandler.END
+        
+        # Извлекаем индекс выбранного элемента
+        element_index = int(query.data.split('_')[-1])
+        elements = context.user_data.get('memory_elements', [])
+        
+        if element_index < 0 or element_index >= len(elements):
+            await query.edit_message_text("❌ Выбран неверный элемент.")
+            return ConversationHandler.END
+        
+        # Получаем выбранный элемент
+        element = elements[element_index]
+        context.user_data['selected_element_index'] = element_index
+        
+        # Формируем подробную информацию об элементе
+        search_text = element.get("search_text", "Неизвестно")
+        context_info = element.get("context_info", "")
+        id_value = element.get("id", "Нет ID")
+        created = element.get("created", "Неизвестно")
+        last_found = element.get("last_found", "Неизвестно")
+        success_count = element.get("success_count", 0)
+        total_searches = element.get("total_searches", 0)
+        success_rate = element.get("success_rate", 0) * 100
+        locations = element.get("locations", [])
+
+        # Форматируем временные метки
+        created_formatted = datetime.datetime.fromtimestamp(created).strftime('%Y-%m-%d %H:%M:%S') if isinstance(created, (int, float)) else created
+        last_found_formatted = datetime.datetime.fromtimestamp(last_found).strftime('%Y-%m-%d %H:%M:%S') if isinstance(last_found, (int, float)) else last_found
+        
+        detail_text = (
+            f"📝 Детальная информация о элементе:\n\n"
+            f"🔤 Текст поиска: '{search_text}'\n"
+            f"🔍 Контекст: '{context_info}'\n"
+            f"🔑 ID: {id_value}\n"
+            f"📅 Создан: {created_formatted}\n"
+            f"🕒 Последнее использование: {last_found_formatted}\n"
+            f"📊 Статистика использования:\n"
+            f"  ✅ Успешных поисков: {success_count}\n"
+            f"  🔄 Всего поисков: {total_searches}\n"
+            f"  ⭐ Точность: {success_rate:.0f}%\n\n"
+            f"📍 Сохраненные позиции ({len(locations)}):\n"
+        )
+        
+        # Добавляем информацию о местоположениях
+        for i, location in enumerate(locations[:3], 1):
+            coords = location.get("coordinates", (0, 0))
+            timestamp = location.get("timestamp", "Неизвестно")
+            timestamp_formatted = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if isinstance(timestamp, (int, float)) else timestamp
+            detail_text += f"  {i}. Координаты: ({coords[0]}, {coords[1]}), Время: {timestamp_formatted}\n"
+        
+        if len(locations) > 3:
+            detail_text += f"  ... и еще {len(locations) - 3} позиций.\n"
+        
+        # Создаем клавиатуру с действиями
+        keyboard = [
+            [InlineKeyboardButton("🔄 Обновить", callback_data="memory_update")],
+            [InlineKeyboardButton("📊 Тест памяти", callback_data="memory_test")],
+            [InlineKeyboardButton("❌ Удалить", callback_data="memory_delete")],
+            [InlineKeyboardButton("⬅️ Назад к списку", callback_data="memory_back")],
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(detail_text, reply_markup=reply_markup)
+        
+        return SHOW_MEMORY_DETAIL
+        
+    except Exception as e:
+        logger.error(f"Ошибка при отображении деталей элемента памяти: {str(e)}")
+        await query.edit_message_text(f"❌ Произошла ошибка: {str(e)}")
+        return ConversationHandler.END
+
+async def memory_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает действия с выбранным элементом памяти."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "memory_back":
+        # Возврат к списку элементов
+        try:
+            elements = context.user_data.get('memory_elements', [])
+            
+            if not elements:
+                await query.edit_message_text("📭 В памяти нет сохраненных элементов.")
+                return ConversationHandler.END
+                
+            # Создаем список элементов с кнопками для выбора
+            keyboard = []
+            message_text = "📋 Выберите элемент для просмотра:\n\n"
+            
+            for i, element in enumerate(elements, 1):
+                search_text = element.get("search_text", "Неизвестно")
+                context_info = element.get("context_info", "")
+                success_rate = element.get("success_rate", 0) * 100
+                
+                # Добавляем информацию в сообщение
+                message_text += f"{i}. '{search_text}'\n   Контекст: '{context_info[:30]}...', Точность: {success_rate:.0f}%\n\n"
+                
+                # Добавляем кнопку для выбора элемента
+                keyboard.append([InlineKeyboardButton(f"{i}. {search_text[:20]}", callback_data=f"memory_view_{i-1}")])
+            
+            # Добавляем кнопку отмены
+            keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="memory_cancel")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message_text, reply_markup=reply_markup)
+            
+            return SHOW_MEMORY_LIST
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к списку памяти: {str(e)}")
+            await query.edit_message_text(f"❌ Произошла ошибка: {str(e)}")
+            return ConversationHandler.END
+    
+    element_index = context.user_data.get('selected_element_index', -1)
+    elements = context.user_data.get('memory_elements', [])
+    
+    if element_index < 0 or element_index >= len(elements):
+        await query.edit_message_text("❌ Элемент не найден.")
+        return ConversationHandler.END
+    
+    element = elements[element_index]
+    
+    if query.data == "memory_delete":
+        # Удаление элемента из памяти
+        try:
+            element_id = element.get("id")
+            memory_manager.remove_element(element_id)
+            await query.edit_message_text(f"✅ Элемент '{element.get('search_text')}' успешно удален из памяти.")
+            return ConversationHandler.END
+        except Exception as e:
+            logger.error(f"Ошибка при удалении элемента: {str(e)}")
+            await query.edit_message_text(f"❌ Ошибка при удалении элемента: {str(e)}")
+            return ConversationHandler.END
+    
+    elif query.data == "memory_test":
+        # Тестирование элемента памяти
+        search_text = element.get("search_text", "")
+        context_info = element.get("context_info", "")
+        
+        await query.edit_message_text(
+            f"🔍 Тестирование элемента памяти...\n\n"
+            f"Текст: '{search_text}'\n"
+            f"Контекст: '{context_info}'\n\n"
+            f"Выполняется поиск на экране..."
+        )
+        
+        try:
+            # Выполняем поиск с использованием данных из памяти
+            result = await memory_manager.execute_search_from_memory(element)
+            
+            if result and result.get("success"):
+                coords = result.get("coordinates")
+                await query.edit_message_text(
+                    f"✅ Тест успешен!\n\n"
+                    f"Текст: '{search_text}'\n"
+                    f"Контекст: '{context_info}'\n\n"
+                    f"📍 Найдены координаты: ({coords[0]}, {coords[1]})\n"
+                    f"📊 Точность после обновления: {element.get('success_rate', 0) * 100:.0f}%"
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ Тест неуспешен\n\n"
+                    f"Текст: '{search_text}'\n"
+                    f"Контекст: '{context_info}'\n\n"
+                    f"Не удалось найти текст на экране.\n"
+                    f"📊 Точность после обновления: {element.get('success_rate', 0) * 100:.0f}%"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка при тестировании элемента: {str(e)}")
+            await query.edit_message_text(f"❌ Ошибка при тестировании: {str(e)}")
+        
+        return ConversationHandler.END
+    
+    elif query.data == "memory_update":
+        # Запрашиваем новый текст и контекст
+        await query.edit_message_text(
+            f"🔄 Обновление элемента памяти\n\n"
+            f"Текущий текст: '{element.get('search_text')}'\n"
+            f"Текущий контекст: '{element.get('context_info')}'\n\n"
+            f"Отправьте новый текст для поиска:"
+        )
+        
+        context.user_data['update_mode'] = "full"
+        context.user_data['element_id'] = element.get("id")
+        return MEMORY_ACTION
+    
+    return SHOW_MEMORY_DETAIL
+
+async def memory_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает действия обновления элемента памяти."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "memory_detail_back":
+        # Возврат к деталям элемента
+        return await memory_list_callback(update, context)
+    
+    element_index = context.user_data.get('selected_element_index', -1)
+    elements = context.user_data.get('memory_elements', [])
+    
+    if element_index < 0 or element_index >= len(elements):
+        await query.edit_message_text("❌ Элемент не найден.")
+        return ConversationHandler.END
+    
+    element = elements[element_index]
+    element_id = element.get("id")
+    
+    if query.data == "memory_update_full":
+        # Запрашиваем новый текст и контекст
+        await query.edit_message_text(
+            f"🔄 Обновление элемента памяти\n\n"
+            f"Текущий текст: '{element.get('search_text')}'\n"
+            f"Текущий контекст: '{element.get('context_info')}'\n\n"
+            f"Отправьте новый текст для поиска:"
+        )
+        
+        context.user_data['update_mode'] = "full"
+        context.user_data['element_id'] = element_id
+        return MEMORY_ACTION
+    
+    elif query.data == "memory_update_text":
+        # Запрашиваем только новый текст
+        await query.edit_message_text(
+            f"🔄 Обновление текста поиска\n\n"
+            f"Текущий текст: '{element.get('search_text')}'\n\n"
+            f"Отправьте новый текст для поиска:"
+        )
+        
+        context.user_data['update_mode'] = "text"
+        context.user_data['element_id'] = element_id
+        return MEMORY_ACTION
+    
+    elif query.data == "memory_update_context":
+        # Запрашиваем только новый контекст
+        await query.edit_message_text(
+            f"🔄 Обновление контекста поиска\n\n"
+            f"Текущий контекст: '{element.get('context_info')}'\n\n"
+            f"Отправьте новый контекст для поиска:"
+        )
+        
+        context.user_data['update_mode'] = "context"
+        context.user_data['element_id'] = element_id
+        return MEMORY_ACTION
+    
+    return ConversationHandler.END
+
+async def memory_update_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает ввод нового текста или контекста для обновления элемента."""
+    user_input = update.message.text
+    update_mode = context.user_data.get('update_mode')
+    element_id = context.user_data.get('element_id')
+    
+    if not element_id:
+        await update.message.reply_text("❌ Ошибка: не найден ID элемента для обновления.")
+        return ConversationHandler.END
+    
+    try:
+        if update_mode == "full":
+            # Сохраняем новый текст и запрашиваем контекст
+            context.user_data['new_search_text'] = user_input
+            await update.message.reply_text(
+                f"✅ Новый текст поиска: '{user_input}'\n\n"
+                f"Теперь отправьте новый контекст:"
+            )
+            context.user_data['update_mode'] = "full_context"
+            return MEMORY_ACTION
+        
+        elif update_mode == "full_context":
+            # Получаем ранее сохраненный текст и обновляем элемент
+            new_search_text = context.user_data.get('new_search_text')
+            new_context = user_input
+            
+            memory_manager.update_element(
+                element_id, 
+                new_search_text=new_search_text, 
+                new_context_info=new_context
+            )
+            
+            await update.message.reply_text(
+                f"✅ Элемент успешно обновлен!\n\n"
+                f"Новый текст: '{new_search_text}'\n"
+                f"Новый контекст: '{new_context}'"
+            )
+            return ConversationHandler.END
+        
+        elif update_mode == "text":
+            # Обновляем только текст
+            memory_manager.update_element(element_id, new_search_text=user_input)
+            await update.message.reply_text(f"✅ Текст поиска успешно обновлен на '{user_input}'")
+            return ConversationHandler.END
+        
+        elif update_mode == "context":
+            # Обновляем только контекст
+            memory_manager.update_element(element_id, new_context_info=user_input)
+            await update.message.reply_text(f"✅ Контекст поиска успешно обновлен на '{user_input}'")
+            return ConversationHandler.END
+        
+        else:
+            await update.message.reply_text("❌ Неизвестный режим обновления.")
+            return ConversationHandler.END
+            
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении элемента: {str(e)}")
+        await update.message.reply_text(f"❌ Произошла ошибка при обновлении: {str(e)}")
+        return ConversationHandler.END
+
+async def memory_elements_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отображает все запомненные элементы из памяти."""
+    logger.info("Запрошен список всех элементов памяти")
+    
+    try:
+        # Получаем все элементы из памяти
+        elements = memory_manager.get_all_elements()
+        
+        if not elements or len(elements) == 0:
+            await update.message.reply_text("📭 В памяти нет сохраненных элементов.")
+            return
+        
+        # Формируем сообщение со списком элементов
+        total_elements = len(elements)
+        await update.message.reply_text(f"📋 Список запомненных элементов ({total_elements}):")
+        
+        # Разбиваем элементы на более мелкие части для отправки
+        max_elements_per_message = 20
+        for i in range(0, total_elements, max_elements_per_message):
+            batch = elements[i:i + max_elements_per_message]
+            
+            message_text = ""
+            for j, element in enumerate(batch, i + 1):
+                search_text = element.get("search_text", "Неизвестно")
+                context_info = element.get("context_info", "")
+                success_rate = element.get("success_rate", 0) * 100
+                locations_count = len(element.get("locations", []))
+                
+                # Сокращаем контекст, если он слишком длинный
+                context_preview = (context_info[:47] + "...") if len(context_info) > 50 else context_info
+                
+                message_text += (
+                    f"{j}. '{search_text}'\n"
+                    f"   Контекст: '{context_preview}'\n"
+                    f"   Позиций: {locations_count}, Точность: {success_rate:.0f}%\n\n"
+                )
+            
+            if message_text:
+                await update.message.reply_text(message_text)
+        
+        # Добавляем подсказку о команде для более детального просмотра
+        await update.message.reply_text(
+            "💡 Используйте /memory_browse для детального просмотра и управления элементами."
+        )
+    
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка элементов памяти: {str(e)}")
+        await update.message.reply_text(f"❌ Произошла ошибка при получении списка элементов: {str(e)}")
+
 def main() -> None:
     """Запускает бота."""
     logger.info("Запуск Telegram бота...")
@@ -653,6 +1350,10 @@ def main() -> None:
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("memory_stats", memory_stats_command))
+    application.add_handler(CommandHandler("memory_elements", memory_elements_command))
+    application.add_handler(CommandHandler("memory_clean", memory_clean_command))
+    application.add_handler(CommandHandler("memory_debug", memory_debug_command))
     
     # Регистрация ConversationHandler для умного поиска
     smart_search_handler = ConversationHandler(
@@ -676,6 +1377,21 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     application.add_handler(smart_search_click_handler)
+    
+    # Добавляем обработчик для просмотра и управления памятью
+    memory_browse_handler = ConversationHandler(
+        entry_points=[CommandHandler("memory_browse", memory_browse_command)],
+        states={
+            SHOW_MEMORY_LIST: [CallbackQueryHandler(memory_list_callback, pattern=r"^(memory_view_|memory_cancel)")],
+            SHOW_MEMORY_DETAIL: [CallbackQueryHandler(memory_detail_callback, pattern=r"^(memory_back|memory_update|memory_test|memory_delete)")],
+            MEMORY_ACTION: [
+                CallbackQueryHandler(memory_action_callback, pattern=r"^memory_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, memory_update_text)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    application.add_handler(memory_browse_handler)
     
     # Регистрация обработчика для всех остальных текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda update, context: suggest_next_action(update, context)))

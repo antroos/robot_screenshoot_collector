@@ -11,6 +11,7 @@ import time
 import glob
 import logging
 import random
+from memory_manager import MemoryManager
 
 # Настройка логирования
 logging.basicConfig(
@@ -76,6 +77,10 @@ def load_api_keys():
 api_keys = load_api_keys()
 api_key = api_keys["openai"]  # OpenAI API ключ
 logger.info("API ключ OpenAI установлен")
+
+# Инициализация менеджера памяти
+memory_manager = MemoryManager()
+logger.info("Менеджер памяти инициализирован")
 
 # Пути к файлам
 working_dir = os.path.dirname(os.path.abspath(__file__))
@@ -554,6 +559,16 @@ def find_text_on_image(img_path, search_text, context_info=None):
         logger.error(f"Файл изображения не найден: {img_path}")
         return None
     
+    # Сначала проверяем в памяти, есть ли этот элемент
+    logger.info(f"Проверяем элемент '{search_text}' в памяти")
+    memory_coordinates = memory_manager.find_element(search_text, context_info)
+    
+    if memory_coordinates:
+        logger.info(f"Элемент '{search_text}' найден в памяти, координаты: {memory_coordinates}")
+        return memory_coordinates
+        
+    logger.info(f"Элемент '{search_text}' не найден в памяти. Начинаем полный поиск")
+    
     # Создаем новые папки для текущего теста
     test_folder, squares_folder, test_num = create_test_folder()
     print(f"Starting text search test #{test_num} in folder: {test_folder}")
@@ -590,10 +605,48 @@ def find_text_on_image(img_path, search_text, context_info=None):
             f.write(f"Контекст скриншота: {screen_context}\n")
             f.write("Результат: Текст не найден на полном изображении.\n")
         
+        # Обновляем статистику поиска в памяти (неудачный поиск)
+        memory_manager.update_search_statistics(search_text, context_info, False)
+        
         return None
     
     # Рекурсивно ищем текст на изображении
-    return find_text_recursively(img, screen_img_base64, search_text, test_folder, squares_folder, (0, 0), 0, screen_context, context_info)
+    coordinates = find_text_recursively(img, screen_img_base64, search_text, test_folder, squares_folder, (0, 0), 0, screen_context, context_info)
+    
+    # Если текст найден, сохраняем в памяти
+    if coordinates:
+        logger.info(f"Текст '{search_text}' найден. Сохраняем в памяти.")
+        
+        # Получаем процент соответствия из файла info.txt
+        info_path = os.path.join(test_folder, "info.txt")
+        match_percentage = 0
+        try:
+            with open(info_path, 'r') as f:
+                for line in f:
+                    if line.startswith("Соответствие:"):
+                        match_percentage = int(line.split(":")[1].strip().replace("%", ""))
+                        break
+        except:
+            match_percentage = 90  # По умолчанию, если не удалось прочитать
+        
+        # Определяем размер элемента из найденных координат
+        # (используем прямоугольник 50x50 пикселей вокруг найденной точки)
+        element_size = (50, 50)
+        
+        # Сохраняем найденный элемент в памяти
+        memory_manager.save_element(
+            search_text=search_text,
+            coordinates=coordinates,
+            match_percentage=match_percentage,
+            screen_context=screen_context,
+            context_info=context_info,
+            element_size=element_size
+        )
+    else:
+        # Обновляем статистику поиска в памяти (неудачный поиск)
+        memory_manager.update_search_statistics(search_text, context_info, False)
+    
+    return coordinates
 
 def main():
     logger.info("Запуск main() функции")
