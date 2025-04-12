@@ -4,9 +4,10 @@ import os
 import logging
 import pyautogui
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 import time
 from find_text import find_text_on_image, load_api_keys
+from robot_controller import AnthropicComputerController
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,12 +28,21 @@ working_dir = os.path.dirname(os.path.abspath(__file__))
 screenshot_path = os.path.join(working_dir, "screen.png")
 logger.info(f"Рабочая директория: {working_dir}")
 
+# Состояния для ConversationHandler
+SEARCH_TERM, CONTEXT_INFO = range(2)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет приветственное сообщение при команде /start."""
     user = update.effective_user
     await update.message.reply_text(
         f"Привет, {user.first_name}! Я бот для поиска текста на экране.\n\n"
-        "Что вы хотите найти? Используйте команду /search <текст>"
+        "Доступные команды:\n"
+        "/search <текст> - Найти текст на экране\n"
+        "/search_with_context <текст> | <контекст> - Найти текст с дополнительным контекстом\n"
+        "/smart_search - Начать двухэтапный поиск с контекстом\n"
+        "/click <текст> - Найти и кликнуть на текст\n"
+        "/type <текст для поиска> | <текст для ввода> - Найти текст, кликнуть и ввести текст\n"
+        "/help - Показать справку"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -40,7 +50,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(
         "Доступные команды:\n\n"
         "/search <текст> - Найти текст на экране\n"
-        "/help - Показать эту справку"
+        "/search_with_context <текст> | <контекст> - Найти текст с дополнительным контекстом\n"
+        "Пример: /search_with_context Search | Текст невеликий і є плейсхолдером у полі вводу\n\n"
+        "/smart_search - Начать двухэтапный поиск с контекстом\n"
+        "/click <текст> - Найти и кликнуть на текст\n"
+        "/type <текст для поиска> | <текст для ввода> - Найти текст, кликнуть и ввести текст\n"
+        "/anthropic_click <текст> - Найти и кликнуть на текст с использованием Anthropic API"
     )
 
 async def take_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -76,6 +91,65 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Ищем текст на скриншоте
         await update.message.reply_text("Анализирую скриншот...")
         coordinates = find_text_on_image(screenshot_path, search_text)
+        
+        if coordinates:
+            x, y = coordinates
+            await update.message.reply_text(
+                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y})"
+            )
+            # Отправляем скриншот с отметкой найденного текста
+            result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
+                          if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
+            
+            if result_files:
+                latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
+                result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+                
+                if os.path.exists(result_path):
+                    await update.message.reply_photo(photo=open(result_path, 'rb'))
+                else:
+                    await update.message.reply_text("Результат найден, но изображение недоступно.")
+            else:
+                await update.message.reply_text("Результат найден, но изображение недоступно.")
+        else:
+            await update.message.reply_text(f"Текст '{search_text}' не найден на скриншоте.")
+    except Exception as e:
+        logger.error(f"Ошибка при поиске текста: {str(e)}")
+        await update.message.reply_text(f"Произошла ошибка при поиске текста: {str(e)}")
+
+async def search_with_context_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обрабатывает команду /search_with_context для поиска текста с дополнительным контекстом."""
+    if not context.args:
+        await update.message.reply_text(
+            "Пожалуйста, укажите текст для поиска и контекст: /search_with_context <текст> | <контекст>"
+        )
+        return
+
+    args_text = ' '.join(context.args)
+    if '|' not in args_text:
+        await update.message.reply_text(
+            "Пожалуйста, разделите текст для поиска и контекст символом '|': "
+            "/search_with_context <текст> | <контекст>"
+        )
+        return
+    
+    search_text, context_text = args_text.split('|', 1)
+    search_text = search_text.strip()
+    context_text = context_text.strip()
+    
+    logger.info(f"Поиск текста: '{search_text}' с контекстом: '{context_text}'")
+    
+    await update.message.reply_text(f"Начинаю поиск текста: '{search_text}' с контекстом: '{context_text}'")
+    
+    # Делаем скриншот
+    screenshot_path = await take_screenshot(update, context)
+    if not screenshot_path:
+        return
+    
+    try:
+        # Ищем текст на скриншоте с учетом контекста
+        await update.message.reply_text("Анализирую скриншот...")
+        coordinates = find_text_on_image(screenshot_path, search_text, context_text)
         
         if coordinates:
             x, y = coordinates
@@ -145,6 +219,76 @@ async def click_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception as e:
         logger.error(f"Ошибка при поиске и клике: {str(e)}")
         await update.message.reply_text(f"Произошла ошибка при поиске и клике: {str(e)}")
+
+async def anthropic_click_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обрабатывает команду /anthropic_click для клика на найденный текст с использованием Anthropic API."""
+    if not context.args:
+        await update.message.reply_text("Пожалуйста, укажите текст для поиска и клика: /anthropic_click <текст>")
+        return
+
+    search_text = ' '.join(context.args)
+    logger.info(f"Поиск и клик через Anthropic на текст: {search_text}")
+    
+    await update.message.reply_text(f"Начинаю поиск текста для клика через Anthropic API: '{search_text}'")
+    
+    # Делаем скриншот
+    screenshot_path = await take_screenshot(update, context)
+    if not screenshot_path:
+        return
+    
+    try:
+        # Ищем текст на скриншоте
+        await update.message.reply_text("Анализирую скриншот...")
+        coordinates = find_text_on_image(screenshot_path, search_text)
+        
+        if coordinates:
+            x, y = coordinates
+            await update.message.reply_text(
+                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y}). Выполняю клик через Anthropic API..."
+            )
+            
+            # Кликаем по найденным координатам с помощью Anthropic API
+            success = await click_using_anthropic(x, y)
+            
+            if success:
+                # Делаем новый скриншот после клика
+                time.sleep(1)  # Даем время для отклика интерфейса
+                new_screenshot = pyautogui.screenshot()
+                new_screenshot_path = os.path.join(working_dir, "after_anthropic_click.png")
+                new_screenshot.save(new_screenshot_path)
+                
+                await update.message.reply_text("Клик через Anthropic API выполнен успешно!")
+                await update.message.reply_photo(photo=open(new_screenshot_path, 'rb'))
+            else:
+                await update.message.reply_text("Ошибка при выполнении клика через Anthropic API.")
+        else:
+            await update.message.reply_text(f"Текст '{search_text}' не найден на скриншоте. Клик не выполнен.")
+    except Exception as e:
+        logger.error(f"Ошибка при поиске и клике через Anthropic: {str(e)}")
+        await update.message.reply_text(f"Произошла ошибка при поиске и клике через Anthropic: {str(e)}")
+
+async def click_using_anthropic(x, y):
+    """Выполняет клик по координатам с использованием Anthropic API."""
+    try:
+        # Создаем и инициализируем контроллер
+        controller = AnthropicComputerController()
+        
+        # Подготавливаем промт для Anthropic
+        prompt = f"Выполни клик по координатам X={x}, Y={y} на экране."
+        
+        # Отправляем запрос к Anthropic API с указанием координат
+        response = controller.send_to_anthropic(prompt, add_coordinate=(x, y))
+        
+        # Проверка результата
+        if response:
+            logger.info(f"Клик через Anthropic API выполнен успешно по координатам ({x}, {y})")
+            return True
+        else:
+            logger.error("Ошибка при выполнении клика через Anthropic API")
+            return False
+    except Exception as e:
+        logger.error(f"Исключение при клике через Anthropic API: {str(e)}")
+        return False
 
 async def type_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает команду /type для ввода текста."""
@@ -249,6 +393,81 @@ async def text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.error(f"Ошибка при поиске текста: {str(e)}")
         await update.message.reply_text(f"Произошла ошибка при поиске текста: {str(e)}")
 
+async def start_smart_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начинает двухэтапный диалог для поиска текста с контекстом."""
+    await update.message.reply_text(
+        "Начинаем умный поиск.\n\n"
+        "Шаг 1: Укажите, какой текст вы хотите найти на экране?"
+    )
+    return SEARCH_TERM
+
+async def get_search_term(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает поисковый запрос и запрашивает контекст."""
+    search_text = update.message.text
+    # Сохраняем поисковый запрос в контексте
+    context.user_data['search_text'] = search_text
+    
+    await update.message.reply_text(
+        f"Ищем текст: '{search_text}'\n\n"
+        "Шаг 2: Опишите контекст, где этот текст должен находиться? "
+        "Например: 'Это поле поиска в верхней части страницы'"
+    )
+    return CONTEXT_INFO
+
+async def get_context_and_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает контекст и выполняет поиск."""
+    context_info = update.message.text
+    search_text = context.user_data.get('search_text', '')
+    
+    logger.info(f"Поиск текста: '{search_text}' с контекстом: '{context_info}'")
+    
+    await update.message.reply_text(f"Начинаю поиск текста: '{search_text}' с контекстом: '{context_info}'")
+    
+    # Делаем скриншот
+    screenshot_path = await take_screenshot(update, context)
+    if not screenshot_path:
+        return ConversationHandler.END
+    
+    try:
+        # Ищем текст на скриншоте с учетом контекста
+        await update.message.reply_text("Анализирую скриншот...")
+        coordinates = find_text_on_image(screenshot_path, search_text, context_info)
+        
+        if coordinates:
+            x, y = coordinates
+            await update.message.reply_text(
+                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y})"
+            )
+            # Отправляем скриншот с отметкой найденного текста
+            result_files = [f for f in os.listdir(os.path.join(working_dir, "text_search_tests")) 
+                          if f.startswith("test_") and os.path.isdir(os.path.join(working_dir, "text_search_tests", f))]
+            
+            if result_files:
+                latest_test = max(result_files, key=lambda x: int(x.split("_")[1]))
+                result_path = os.path.join(working_dir, "text_search_tests", latest_test, "result.png")
+                
+                if os.path.exists(result_path):
+                    await update.message.reply_photo(photo=open(result_path, 'rb'))
+                else:
+                    await update.message.reply_text("Результат найден, но изображение недоступно.")
+            else:
+                await update.message.reply_text("Результат найден, но изображение недоступно.")
+        else:
+            await update.message.reply_text(f"Текст '{search_text}' не найден на экране.")
+    except Exception as e:
+        logger.error(f"Ошибка при поиске текста: {str(e)}")
+        await update.message.reply_text(f"Произошла ошибка при поиске текста: {str(e)}")
+    
+    # Очищаем данные пользователя и завершаем диалог
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет диалог умного поиска."""
+    await update.message.reply_text("Поиск отменен.")
+    context.user_data.clear()
+    return ConversationHandler.END
+
 def main() -> None:
     """Запускает бота."""
     logger.info("Запуск Telegram бота...")
@@ -260,10 +479,23 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("search_with_context", search_with_context_command))
     application.add_handler(CommandHandler("click", click_command))
+    application.add_handler(CommandHandler("anthropic_click", anthropic_click_command))
     application.add_handler(CommandHandler("type", type_command))
     
-    # Регистрация обработчика текстовых сообщений
+    # Регистрация ConversationHandler для умного поиска
+    smart_search_handler = ConversationHandler(
+        entry_points=[CommandHandler("smart_search", start_smart_search)],
+        states={
+            SEARCH_TERM: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_search_term)],
+            CONTEXT_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_context_and_search)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    application.add_handler(smart_search_handler)
+    
+    # Регистрация обработчика текстовых сообщений (должен быть после ConversationHandler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_input))
 
     # Запуск бота
