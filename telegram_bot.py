@@ -12,6 +12,8 @@ from robot_controller import AnthropicComputerController
 from PIL import Image, ImageDraw, ImageFont
 import datetime
 import json
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
 
 # Настройка логирования
 logging.basicConfig(
@@ -750,28 +752,85 @@ async def execute_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                         f"({original_x}, {original_y}) -> ({x}, {y})"
                     )
                 
+                # Делаем скриншот ДО клика
+                before_click_screenshot = pyautogui.screenshot()
+                before_click_path = os.path.join(working_dir, "before_click.png")
+                before_click_screenshot.save(before_click_path)
+                
                 # Логируем текущую позицию мыши перед кликом
                 current_mouse_x, current_mouse_y = pyautogui.position()
                 logger.info(f"Текущая позиция мыши перед кликом: ({current_mouse_x}, {current_mouse_y})")
                 
                 # Выполняем клик
                 await update.message.reply_text(f"Выполняю клик по координатам (X: {x}, Y: {y})...")
+                
+                # Переводим фокус на нужное окно (перемещение мыши с небольшой задержкой)
+                pyautogui.moveTo(x, y, duration=0.5)
+                time.sleep(0.5)  # Увеличенный таймаут перед кликом
+                
+                # Выполняем клик
                 pyautogui.click(x, y)
                 
                 # Логируем позицию мыши после клика
                 after_mouse_x, after_mouse_y = pyautogui.position()
                 logger.info(f"Позиция мыши после клика: ({after_mouse_x}, {after_mouse_y})")
                 
-                await update.message.reply_text(f"Клик по тексту '{search_text}' выполнен успешно!")
-                
-                # Делаем новый скриншот после клика
-                time.sleep(1)  # Небольшая пауза для обновления экрана
-                screenshot_after = pyautogui.screenshot()
+                # Делаем новый скриншот ПОСЛЕ клика с увеличенным ожиданием
+                time.sleep(2)  # Увеличенный таймаут для обновления экрана после клика
+                after_click_screenshot = pyautogui.screenshot()
                 after_path = os.path.join(working_dir, "after_click.png")
-                screenshot_after.save(after_path)
+                after_click_screenshot.save(after_path)
                 
-                await update.message.reply_text("Вот результат после клика:")
-                await update.message.reply_photo(photo=open(after_path, 'rb'))
+                # Сравниваем скриншоты до и после клика
+                screenshots_different = compare_screenshots(before_click_path, after_path)
+                
+                # Если скриншоты не отличаются, выполняем повторную попытку клика
+                if not screenshots_different:
+                    logger.info("Экран не изменился после клика. Выполняю повторную попытку.")
+                    await update.message.reply_text("Экран не изменился после клика. Жду еще 5 секунд и повторяю...")
+                    
+                    # Ожидаем 5 секунд и делаем еще один скриншот
+                    time.sleep(5)
+                    second_check_screenshot = pyautogui.screenshot()
+                    second_check_path = os.path.join(working_dir, "second_check.png")
+                    second_check_screenshot.save(second_check_path)
+                    
+                    # Проверяем, изменился ли экран за дополнительное время ожидания
+                    screenshots_different = compare_screenshots(before_click_path, second_check_path)
+                    
+                    if not screenshots_different:
+                        logger.info("Экран все еще не изменился. Выполняю повторный клик.")
+                        await update.message.reply_text("Экран все еще не изменился. Выполняю повторный клик...")
+                        
+                        # Выполняем повторный клик
+                        pyautogui.moveTo(x, y, duration=0.3)
+                        time.sleep(0.5)
+                        pyautogui.click(x, y)
+                        
+                        # Ожидаем и делаем финальный скриншот
+                        time.sleep(2)
+                        final_screenshot = pyautogui.screenshot()
+                        final_path = os.path.join(working_dir, "after_second_click.png")
+                        final_screenshot.save(final_path)
+                        
+                        # Отправляем результат с информацией о повторном клике
+                        await update.message.reply_text(
+                            f"Клик по тексту '{search_text}' выполнен повторно, так как первый клик "
+                            f"не привел к изменениям на экране."
+                        )
+                        await update.message.reply_photo(photo=open(final_path, 'rb'), caption="Результат после повторного клика")
+                    else:
+                        # Экран изменился за время ожидания
+                        await update.message.reply_text(
+                            f"Клик по тексту '{search_text}' выполнен успешно! "
+                            f"Экран изменился после дополнительного ожидания."
+                        )
+                        await update.message.reply_photo(photo=open(second_check_path, 'rb'))
+                else:
+                    # Экран изменился после первого клика
+                    await update.message.reply_text(f"Клик по тексту '{search_text}' выполнен успешно!")
+                    await update.message.reply_photo(photo=open(after_path, 'rb'))
+                
             except Exception as e:
                 logger.error(f"Ошибка при выполнении клика: {str(e)}")
                 await update.message.reply_text(f"Произошла ошибка при выполнении клика: {str(e)}")
@@ -784,6 +843,46 @@ async def execute_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data.clear()
     await suggest_next_action(update, context)
     return ConversationHandler.END
+
+def compare_screenshots(image1_path, image2_path, threshold=0.95):
+    """
+    Сравнивает два скриншота и возвращает True, если они отличаются.
+    
+    Args:
+        image1_path: путь к первому изображению
+        image2_path: путь ко второму изображению
+        threshold: порог схожести (0-1), при котором изображения считаются разными
+        
+    Returns:
+        True, если изображения отличаются, False, если одинаковые
+    """
+    try:
+        # Открываем изображения
+        img1 = Image.open(image1_path).convert('RGB')
+        img2 = Image.open(image2_path).convert('RGB')
+        
+        # Приводим к одинаковому размеру если нужно
+        if img1.size != img2.size:
+            img2 = img2.resize(img1.size)
+        
+        # Преобразуем в numpy массивы
+        img1_np = np.array(img1)
+        img2_np = np.array(img2)
+        
+        # Используем структурное сходство (SSIM) для сравнения
+        from skimage.metrics import structural_similarity as ssim
+        
+        # Вычисляем SSIM для каждого канала и берем среднее
+        similarity = ssim(img1_np, img2_np, channel_axis=2)
+        
+        logger.info(f"Сходство скриншотов: {similarity:.4f} (порог: {threshold})")
+        
+        # Возвращаем True, если изображения достаточно различаются
+        return similarity < threshold
+    except Exception as e:
+        logger.error(f"Ошибка при сравнении скриншотов: {str(e)}")
+        # В случае ошибки предполагаем, что экраны разные
+        return True
 
 async def suggest_next_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Предлагает пользователю выбрать следующее действие"""
