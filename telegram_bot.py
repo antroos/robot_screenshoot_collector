@@ -14,6 +14,9 @@ import datetime
 import json
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
+from pynput import mouse # Добавляем импорт
+import threading # Для ожидания клика в отдельном потоке
+import asyncio # Добавляем импорт для асинхронного ожидания
 
 # Настройка логирования
 logging.basicConfig(
@@ -34,18 +37,28 @@ working_dir = os.path.dirname(os.path.abspath(__file__))
 screenshot_path = os.path.join(working_dir, "screen.png")
 logger.info(f"Рабочая директория: {working_dir}")
 
-# Состояния для ConversationHandler
+# Определения состояний для ConversationHandler
 SEARCH_TERM, CONTEXT_INFO, CLICK_CONFIRM = range(3)
-
-# Состояния для просмотра содержимого памяти
-MEMORY_BROWSE_ELEMENT, MEMORY_ELEMENT_DETAILS = range(3, 5)
-
-# Определение состояний для просмотра памяти
-SHOW_MEMORY_LIST, SHOW_MEMORY_DETAIL, MEMORY_ACTION = range(10, 13)
+SHOW_MEMORY_LIST, SHOW_MEMORY_DETAIL, MEMORY_ACTION = range(3, 6)
+# Обновляем состояния для ручной разметки
+GET_MARKUP_TEXT, WAIT_FOR_CLICK, GET_MARKUP_CONTEXT, ASK_TEST_MARKUP, CONFIRM_TEST_CLICK, POST_CONFIRM_ACTION = range(6, 12)
 
 # Инициализация менеджера памяти
 memory_manager = MemoryManager()
 logger.info("Менеджер памяти инициализирован для Telegram бота")
+
+# Глобальная переменная для хранения координат клика (или можно использовать context.bot_data)
+_click_coords = None
+_click_event = threading.Event()
+
+# Функция для listener'а мыши
+def on_click(x, y, button, pressed):
+    global _click_coords, _click_event
+    if pressed and button == mouse.Button.left:
+        _click_coords = (int(x), int(y))
+        _click_event.set() # Сигнализируем, что клик произошел
+        logger.info(f"Захвачен клик для разметки в координатах: ({_click_coords[0]}, {_click_coords[1]})")
+        return False # Останавливаем listener
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет приветственное сообщение при команде /start."""
@@ -55,42 +68,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Доступные команды:\n"
         "/smart_search - Начать двухэтапный поиск с контекстом\n"
         "/smart_search_click - Начать двухэтапный поиск с кликом\n"
+        "/manual_markup - Начать процесс ручной разметки\n"
         "/help - Показать справку"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Отправляет справку при команде /help."""
-    await update.message.reply_text(
+    """Отправляет справку по использованию бота."""
+    help_text = (
         "Доступные команды:\n\n"
         "/smart_search - Начать двухэтапный поиск с контекстом\n"
-        "Эта команда запросит у вас текст для поиска, а затем контекст, где этот текст должен находиться.\n\n"
         "/smart_search_click - Начать двухэтапный поиск с кликом\n"
-        "Эта команда найдет текст на экране с учетом контекста и выполнит клик по найденным координатам.\n\n"
-        "/memory_stats - Показать статистику системы памяти\n"
-        "Отображает количество сохраненных элементов и другую информацию о памяти.\n\n"
-        "/memory_elements - Показать все запомненные элементы\n"
-        "Отображает список всех элементов, сохраненных в памяти.\n\n"
-        "/memory_clean - Очистить устаревшие записи из памяти\n"
-        "Удаляет старые и редко используемые элементы из памяти.\n\n"
-        "/memory_debug - Проверить содержимое файла памяти напрямую\n"
-        "Техническая команда для диагностики проблем с памятью.\n\n"
-        "/memory_browse - Просмотр и управление элементами в памяти\n"
-        "Просмотр списка элементов и детальной информации о них.\n\n"
-        "/start - Перезапустить бота\n"
-        "/help - Показать эту справку"
+        "/manual_markup - Начать процесс ручной разметки\n"
+        "/help - Показать эту справку\n\n"
+        "Для начала работы используйте /smart_search или /smart_search_click"
     )
+    await update.message.reply_text(help_text)
 
-async def take_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+async def take_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
     """Делает скриншот экрана и возвращает путь к файлу."""
-    await update.message.reply_text("Делаю скриншот экрана...")
+    # Убираем сообщение об ожидании отсюда
+    # await update.message.reply_text("Делаю скриншот экрана...") 
     try:
+        screenshot_path = os.path.join(working_dir, "screen.png")
         screenshot = pyautogui.screenshot()
         screenshot.save(screenshot_path)
         logger.info(f"Скриншот сохранен в {screenshot_path}")
         return screenshot_path
     except Exception as e:
-        logger.error(f"Ошибка при создании скриншота: {str(e)}")
-        await update.message.reply_text(f"Ошибка при создании скриншота: {str(e)}")
+        logger.error(f"Ошибка при создании скриншота: {e}", exc_info=True)
+        # Сообщаем об ошибке в чат, если можем
+        chat_id = update.effective_chat.id if update and update.effective_chat else None
+        if chat_id:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=f"❌ Не удалось сделать скриншот: {e}")
+            except Exception as send_e:
+                logger.error(f"Не удалось отправить сообщение об ошибке скриншота: {send_e}")
         return None
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1439,6 +1451,383 @@ async def memory_elements_command(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"Ошибка при получении списка элементов памяти: {str(e)}")
         await update.message.reply_text(f"❌ Произошла ошибка при получении списка элементов: {str(e)}")
 
+async def manual_markup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начинает процесс ручной разметки: делает скриншот и запрашивает текст."""
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(chat_id=chat_id, text=
+        "🤖 Начинаем ручную разметку!\n"
+        "Делаю скриншот экрана..."
+    )
+    
+    screenshot_path = await take_screenshot(update, context)
+    if not screenshot_path:
+        # Сообщение об ошибке уже отправлено в take_screenshot
+        return ConversationHandler.END
+
+    context.user_data['markup_screenshot'] = screenshot_path
+    
+    try:
+        await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=open(screenshot_path, 'rb'),
+            caption="✅ Скриншот сделан! Теперь, пожалуйста, отправьте мне ТОЧНЫЙ текст, который вы хотите разметить на этом скриншоте."
+        )
+        return GET_MARKUP_TEXT 
+    except Exception as e:
+        logger.error(f"Не удалось отправить фото скриншота: {e}", exc_info=True)
+        await context.bot.send_message(chat_id=chat_id, text="❌ Не удалось отправить фото скриншота.")
+        return ConversationHandler.END
+
+async def get_markup_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает текст для разметки, просит пользователя кликнуть и отправляет кнопку подтверждения."""
+    search_text = update.message.text
+    user_id = update.effective_user.id
+    logger.info(f"Пользователь {user_id} ввел текст для ручной разметки: '{search_text}'")
+    
+    context.user_data['markup_text'] = search_text
+    
+    global _click_coords, _click_event
+    _click_coords = None
+    _click_event.clear()
+    
+    listener_thread = threading.Thread(target=lambda: mouse.Listener(on_click=on_click).start(), daemon=True)
+    listener_thread.start()
+    logger.info(f"Запущен listener мыши для пользователя {user_id}")
+
+    # Создаем кнопку подтверждения
+    keyboard = [[InlineKeyboardButton("✅ Я кликнул(а)!", callback_data="markup_clicked")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        f"✅ Текст '{search_text}' принят.\n"
+        f"🖱️ Теперь, пожалуйста, кликните ЛЕВОЙ кнопкой мыши на ЦЕНТР этого элемента на вашем экране.\n"
+        f"⏳ После клика нажмите кнопку ниже 👇",
+        reply_markup=reply_markup
+    )
+    
+    return WAIT_FOR_CLICK # Переходим в состояние ожидания клика (точнее, нажатия кнопки)
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет диалог умного поиска."""
+    await update.message.reply_text("Поиск отменен.")
+    context.user_data.clear()
+    await suggest_next_action(update, context)
+    return ConversationHandler.END
+
+async def get_markup_coords(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает координаты, валидирует их и запрашивает контекст."""
+    coords_text = update.message.text
+    user_id = update.effective_user.id
+    
+    try:
+        x_str, y_str = coords_text.split(',')
+        x = int(x_str.strip())
+        y = int(y_str.strip())
+        
+        if x < 0 or y < 0:
+            raise ValueError("Координаты не могут быть отрицательными.")
+            
+        logger.info(f"Пользователь {user_id} ввел координаты для разметки: ({x}, {y})")
+        
+        # Сохраняем координаты
+        context.user_data['markup_coords'] = (x, y)
+        
+        await update.message.reply_text(
+            f"✅ Координаты ({x}, {y}) приняты.\n"
+            f"✍️ Теперь опишите контекст для этого элемента (где он находится, для чего нужен).\n"
+            f"Например: 'Кнопка поиска в правом верхнем углу' или 'Поле ввода имени пользователя'"
+        )
+        
+        return GET_MARKUP_CONTEXT # Переходим в состояние ожидания контекста
+        
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Пользователь {user_id} ввел некорректные координаты: {coords_text}. Ошибка: {e}")
+        await update.message.reply_text(
+            f"❌ Неверный формат координат: '{coords_text}'.\n"
+            f"Пожалуйста, введите координаты в формате X,Y (например: 150,300)."
+        )
+        return GET_MARKUP_COORDS # Остаемся в том же состоянии, ждем корректный ввод
+
+async def get_markup_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает контекст, сохраняет элемент и предлагает его протестировать."""
+    context_info = update.message.text
+    user_id = update.effective_user.id
+    logger.info(f"Пользователь {user_id} ввел контекст для разметки: '{context_info}'")
+    
+    screenshot_path = context.user_data.get('markup_screenshot')
+    search_text = context.user_data.get('markup_text')
+    coordinates = context.user_data.get('markup_coords')
+    
+    if not all([screenshot_path, search_text, coordinates, context_info]):
+        # ... (обработка ошибки нехватки данных)
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    saved_successfully = False
+    try:
+        screen_size = pyautogui.size()
+        element_size = (50, 50)
+        element_rect = (max(0, coordinates[0] - 25), max(0, coordinates[1] - 25), 50, 50)
+        
+        logger.info(f"Попытка сохранения в память:\n"
+                    f"  search_text: {search_text}\n"
+                    f"  coordinates: {coordinates}\n"
+                    f"  context_info: {context_info}\n"
+                    f"  screenshot_path: {screenshot_path}\n"
+                    f"  screen_size: {screen_size}\n"
+                    f"  element_size: {element_size}\n"
+                    f"  element_rect: {element_rect}"
+                   )
+                   
+        success = memory_manager.save_element(
+            search_text=search_text,
+            coordinates=coordinates,
+            match_percentage=100, 
+            screen_context="Manual markup", 
+            context_info=context_info,
+            element_size=element_size,
+            screen_size=screen_size,
+            element_rect=element_rect,
+            screenshot_path=screenshot_path
+        )
+        
+        if success:
+            saved_successfully = True
+            logger.info(f"Ручная разметка для '{search_text}' успешно сохранена пользователем {user_id}")
+            
+            # Предлагаем протестировать
+            keyboard = [
+                [InlineKeyboardButton("✅ Да, тестировать", callback_data="test_markup_yes")],
+                [InlineKeyboardButton("❌ Нет, спасибо", callback_data="test_markup_no")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"💾 Элемент '{search_text}' ({coordinates}) успешно сохранен!\n"
+                f"🎯 Хотите сразу протестировать его (навести курсор и кликнуть)?",
+                reply_markup=reply_markup
+            )
+            
+            # Не очищаем user_data, так как координаты нужны для теста
+            return ASK_TEST_MARKUP # Переходим к шагу запроса теста
+        else:
+            await update.message.reply_text("❌ Не удалось сохранить элемент в памяти. Проверьте логи для деталей.")
+            logger.error(f"Ошибка сохранения ручной разметки для '{search_text}' от пользователя {user_id} (save_element вернул False)")
+            
+    except Exception as e:
+        logger.error(f"Критическая ошибка при вызове save_element из ручной разметки: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Произошла критическая ошибка при сохранении элемента: {e}")
+        
+    # Если сохранение не удалось или произошла другая ошибка, очищаем и завершаем
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def markup_clicked_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает нажатие кнопки 'Я кликнул(а)' во время ручной разметки."""
+    query = update.callback_query
+    await query.answer() # Отвечаем на callback, чтобы кнопка перестала быть 'активной'
+    user_id = query.from_user.id
+
+    global _click_coords, _click_event
+
+    if _click_event.is_set() and _click_coords:
+        coordinates = _click_coords
+        logger.info(f"Клик от пользователя {user_id} успешно подтвержден: {coordinates}")
+        
+        context.user_data['markup_coords'] = coordinates
+        
+        # Сбрасываем глобальные переменные
+        _click_coords = None
+        _click_event.clear()
+        
+        # Убираем кнопку и запрашиваем контекст
+        await query.edit_message_text(
+            text=f"✅ Координаты клика ({coordinates[0]}, {coordinates[1]}) получены!\n"
+                 f"✍️ Теперь опишите контекст для этого элемента (где он находится, для чего нужен).\n"
+                 f"Например: 'Кнопка поиска в правом верхнем углу' или 'Поле ввода имени пользователя'"
+        )
+        
+        return GET_MARKUP_CONTEXT # Переходим к следующему шагу
+    else:
+        # Клик еще не был сделан или не зафиксирован
+        logger.warning(f"Пользователь {user_id} нажал кнопку подтверждения клика, но клик не был зафиксирован.")
+        await query.message.reply_text(
+            "⚠️ Пожалуйста, сначала кликните ЛЕВОЙ кнопкой мыши на элемент на экране, а ЗАТЕМ нажмите кнопку '✅ Я кликнул(а)!'."
+        )
+        # Можно повторно отправить сообщение с кнопкой, если нужно, но пока просто просим повторить
+        # await query.message.reply_text("Пожалуйста, кликните и нажмите кнопку еще раз.", reply_markup=query.message.reply_markup)
+        
+        return WAIT_FOR_CLICK # Остаемся в том же состоянии
+
+async def ask_test_markup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает ответ на тест, выполняет клик и запрашивает подтверждение."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    choice = query.data
+
+    coordinates = context.user_data.get('markup_coords')
+    search_text = context.user_data.get('markup_text', 'неизвестный элемент')
+
+    if choice == "test_markup_yes":
+        if coordinates:
+            x, y = coordinates
+            logger.info(f"Пользователь {user_id} запросил тест элемента '{search_text}' по координатам ({x}, {y})")
+            try:
+                await query.edit_message_text(text=f"🔬 Тестирую элемент '{search_text}'... Навожу курсор на ({x}, {y}) и кликаю.")
+                await asyncio.sleep(1)
+                pyautogui.moveTo(x, y, duration=0.5)
+                logger.info(f"Курсор наведен на ({x}, {y})")
+                await asyncio.sleep(0.5)
+                pyautogui.click(x, y)
+                logger.info(f"Выполнен клик по ({x}, {y})")
+                
+                # Запрашиваем подтверждение
+                keyboard = [
+                    [InlineKeyboardButton("✅ Да, все верно", callback_data="confirm_test_ok")],
+                    [InlineKeyboardButton("🔄 Нет, перезаписать клик", callback_data="confirm_test_retry")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.message.reply_text(
+                    "✅ Тестовый клик выполнен! Проверьте результат на экране.\n"
+                    "🤔 Все верно?",
+                    reply_markup=reply_markup
+                )
+                return CONFIRM_TEST_CLICK # Переходим к подтверждению
+
+            except Exception as e:
+                logger.error(f"Ошибка при тестовом клике для '{search_text}': {e}", exc_info=True)
+                await query.message.reply_text(f"❌ Произошла ошибка во время теста: {e}")
+                # Завершаем, так как тест не удался
+                context.user_data.clear()
+                return ConversationHandler.END
+        else:
+            logger.warning(f"Пользователь {user_id} запросил тест, но координаты отсутствуют в context.user_data")
+            await query.edit_message_text(text="❌ Не удалось получить координаты для теста.")
+            context.user_data.clear()
+            return ConversationHandler.END
+
+    elif choice == "test_markup_no":
+        logger.info(f"Пользователь {user_id} отказался от тестирования элемента '{search_text}'.")
+        await query.edit_message_text(text="Ок, элемент сохранен без тестирования. Что делаем дальше?")
+        context.user_data.clear()
+        await suggest_next_action(update, context) # Предлагаем следующие шаги
+        return ConversationHandler.END
+    
+    # Если что-то пошло не так (неожиданный callback_data)
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def confirm_test_click_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает подтверждение или запрос на перезапись клика."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    choice = query.data 
+
+    search_text = context.user_data.get('markup_text', 'неизвестный элемент')
+
+    if choice == "confirm_test_ok":
+        logger.info(f"Пользователь {user_id} подтвердил корректность теста для элемента '{search_text}'.")
+        
+        # Создаем кнопки для следующего действия
+        keyboard = [
+            [InlineKeyboardButton("➕ Добавить следующий элемент", callback_data="markup_next_element")],
+            [InlineKeyboardButton("🏁 Завершить разметку", callback_data="markup_finish")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            text="✨ Отлично! Элемент окончательно сохранен.\nЧто делаем дальше?",
+            reply_markup=reply_markup
+        )
+        
+        # Не очищаем user_data здесь, т.к. оно будет очищено либо при завершении, либо перед началом нового элемента
+        return POST_CONFIRM_ACTION # Переходим к выбору следующего действия
+
+    elif choice == "confirm_test_retry":
+        logger.info(f"Пользователь {user_id} запросил перезапись клика для элемента '{search_text}'.")
+        if 'markup_coords' in context.user_data:
+            del context.user_data['markup_coords']
+        global _click_coords, _click_event
+        _click_coords = None
+        _click_event.clear()
+        listener_thread = threading.Thread(target=lambda: mouse.Listener(on_click=on_click).start(), daemon=True)
+        listener_thread.start()
+        logger.info(f"Запущен повторный listener мыши для пользователя {user_id} (перезапись)")
+        keyboard = [[InlineKeyboardButton("✅ Я кликнул(а) СНОВА!", callback_data="markup_clicked")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            text=f"Понял. Давайте перезапишем клик для элемента '{search_text}'.\n"
+                 f"🖱️ Пожалуйста, кликните ЛЕВОЙ кнопкой мыши на ЦЕНТР элемента **еще раз**.\n"
+                 f"⏳ После клика нажмите кнопку ниже 👇",
+            reply_markup=reply_markup
+        )
+        return WAIT_FOR_CLICK 
+        
+    # Неожиданный callback
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def post_confirm_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает выбор пользователя: добавить следующий элемент или завершить."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    choice = query.data 
+    chat_id = query.message.chat_id # Получаем chat_id из сообщения с кнопками
+    
+    if choice == "markup_next_element":
+        logger.info(f"Пользователь {user_id} выбрал добавить следующий элемент.")
+        # Очищаем данные предыдущего элемента
+        context.user_data.clear()
+        # Убираем кнопки
+        await query.edit_message_text(text="🚀 Хорошо, начинаем разметку следующего элемента!")
+        
+        # --- Перезапускаем флоу явно ---
+        await context.bot.send_message(chat_id=chat_id, text="Делаю скриншот экрана...")
+        screenshot_path = await take_screenshot(None, context) # Передаем None как update, т.к. он не нужен для сообщения об ошибке
+        
+        if not screenshot_path:
+            await context.bot.send_message(chat_id=chat_id, text="❌ Не удалось сделать скриншот для следующего элемента. Разметка прервана.")
+            return ConversationHandler.END
+        
+        context.user_data['markup_screenshot'] = screenshot_path
+        
+        try:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=open(screenshot_path, 'rb'),
+                caption="✅ Скриншот сделан! Теперь отправьте ТОЧНЫЙ текст для нового элемента."
+            )
+            return GET_MARKUP_TEXT # Возвращаемся в состояние ожидания текста
+        except Exception as e:
+            logger.error(f"Не удалось отправить фото скриншота для нового элемента: {e}", exc_info=True)
+            await context.bot.send_message(chat_id=chat_id, text="❌ Не удалось отправить фото скриншота. Разметка прервана.")
+            return ConversationHandler.END
+        # ---------------------------------
+        
+    elif choice == "markup_finish":
+        logger.info(f"Пользователь {user_id} выбрал завершить разметку.")
+        await query.edit_message_text(text="🏁 Разметка завершена. Спасибо!")
+        context.user_data.clear() 
+        
+        # Отправляем текст справки как новое сообщение
+        help_text = (
+            "Доступные команды:\n\n"
+            "/smart_search - Начать двухэтапный поиск с контекстом\n"
+            "/smart_search_click - Начать двухэтапный поиск с кликом\n"
+            "/manual_markup - Начать процесс ручной разметки\n"
+            "/help - Показать эту справку\n\n"
+            "Что делаем дальше?"
+        )
+        await context.bot.send_message(chat_id=query.message.chat_id, text=help_text)
+        
+        return ConversationHandler.END
+        
+    context.user_data.clear()
+    return ConversationHandler.END
+
 def main() -> None:
     """Запускает бота."""
     logger.info("Запуск Telegram бота...")
@@ -1449,6 +1838,10 @@ def main() -> None:
     # Регистрация обработчиков команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    # Убираем старый CommandHandler для manual_markup
+    # application.add_handler(CommandHandler("manual_markup", manual_markup_command)) 
+    
+    # Регистрация остальных обработчиков команд
     application.add_handler(CommandHandler("memory_stats", memory_stats_command))
     application.add_handler(CommandHandler("memory_elements", memory_elements_command))
     application.add_handler(CommandHandler("memory_clean", memory_clean_command))
@@ -1491,8 +1884,25 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)]
     )
     application.add_handler(memory_browse_handler)
+
+    # Регистрация ConversationHandler для ручной разметки (НОВЫЙ)
+    manual_markup_handler = ConversationHandler(
+        entry_points=[CommandHandler("manual_markup", manual_markup_command)],
+        states={
+            GET_MARKUP_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_markup_text)],
+            WAIT_FOR_CLICK: [CallbackQueryHandler(markup_clicked_callback, pattern="^markup_clicked$")], 
+            GET_MARKUP_CONTEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_markup_context)],
+            ASK_TEST_MARKUP: [CallbackQueryHandler(ask_test_markup_callback, pattern="^test_markup_(yes|no)$")], 
+            CONFIRM_TEST_CLICK: [CallbackQueryHandler(confirm_test_click_callback, pattern="^confirm_test_(ok|retry)$")],
+            # Добавляем шаг выбора следующего действия
+            POST_CONFIRM_ACTION: [CallbackQueryHandler(post_confirm_action_callback, pattern="^markup_(next_element|finish)$")]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        # conversation_timeout=300 
+    )
+    application.add_handler(manual_markup_handler)
     
-    # Регистрация обработчика для всех остальных текстовых сообщений
+    # Регистрация обработчика для всех остальных текстовых сообщений (должен быть последним)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda update, context: suggest_next_action(update, context)))
 
     # Запуск бота

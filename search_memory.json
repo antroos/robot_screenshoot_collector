@@ -1,0 +1,377 @@
+{
+  "elements": [
+    {
+      "id": "9a07e6a0f31ff6bb6d00ad03b6484fd6",
+      "search_text": "Кнопка Поиск",
+      "context_info": "Кнопка поиска в правом верхнем углу",
+      "screen_context": "Веб-страница Google",
+      "created": 1744485199,
+      "last_found": 1744485199,
+      "locations": [
+        {
+          "coordinates": [
+            500,
+            300
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            450,
+            275,
+            100,
+            50
+          ],
+          "match_percentage": 95,
+          "timestamp": 1744485199,
+          "screen_hash": "5a43e2631e7aef5035532bca3faf8754",
+          "screenshot": "9a07e6a0f31ff6bb6d00ad03b6484fd6_1744485199.png"
+        }
+      ],
+      "success_count": 2,
+      "total_searches": 2,
+      "success_rate": 1.0
+    },
+    {
+      "id": "7ee8c51865597205227f6ccf6219e2c7",
+      "search_text": "Explore",
+      "context_info": "Левое боковое меню инстаграма",
+      "screen_context": "This screenshot is from Instagram's web interface, not a search results screen from an app store. It shows:\n\n1. **Navigation Bar**: Options like Home, Search, Explore, Reels, Messages, Notifications, Create, Dashboard, Profile, AI Studio, Threads, and More.\n2. **Feed**: A post by a verified account with an image and a caption about an IVF alternative.\n3. **Stories**: User stories are displayed at the top.\n4. **Suggestions**: Suggested accounts to follow on the right side.\n5. **Interactions**: Like and comment options on the post.\n\nThe screenshot reflects a typical Instagram homepage view.",
+      "created": 1744485964,
+      "last_found": 1744712294,
+      "locations": [
+        {
+          "coordinates": [
+            131,
+            770
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            106,
+            745,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744485964,
+          "screen_hash": "157b0cd685f6d1eec4b8b65476257718",
+          "screenshot": "7ee8c51865597205227f6ccf6219e2c7_1744485964.png"
+        }
+      ],
+      "success_count": 6,
+      "total_searches": 7,
+      "success_rate": 0.8571428571428571,
+      "text_match": 1.0
+    },
+    {
+      "id": "0ee0aa74acbd3597c3e1d877c1707503",
+      "search_text": "Search",
+      "context_info": "Левое боковое меню инстаграма",
+      "screen_context": "This is not a search results screen from an app store. It's a screenshot of the Instagram Explore page, which is a part of the Instagram platform designed to help users discover new content based on their interests and interactions.\n\nThe visible information includes:\n\n1. The Instagram interface, with options such as Home, Search, Explore, Reels, Messages, Notifications, Create, Dashboard, Profile, and more on the left sidebar.\n2. A grid view of images and videos that are suggested content for the user.\n3. Various types of thumbnails indicating videos or posts related to different topics or interests.\n4. The web URL shown is specific to Instagram's Explore page.\n\nThis feature provides a personalized content discovery experience.",
+      "created": 1744487116,
+      "last_found": 1744492508,
+      "locations": [
+        {
+          "coordinates": [
+            183,
+            672
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            158,
+            647,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744487116,
+          "screen_hash": "cff14e548ba46924070042564f39a329",
+          "screenshot": "0ee0aa74acbd3597c3e1d877c1707503_1744487116.png"
+        }
+      ],
+      "success_count": 3,
+      "total_searches": 6,
+      "success_rate": 0.5,
+      "text_match": 0.5
+    },
+    {
+      "id": "b014b64cd3df0cb59b4ddaf9b73fcf52",
+      "search_text": "Search",
+      "context_info": "Элемент в боковом меню инстаграма",
+      "screen_context": "This screenshot shows the \"Explore\" page of Instagram on a web browser. It is not a search results screen from an app store. The page displays a grid of posts, including videos and images, that the platform suggests to the user based on their interests or popular trends.\n\nKey information shown includes:\n\n- A navigation menu on the left side with options like Home, Search, Explore, Reels, Messages, Notifications, and more.\n- A grid of various media posts, each potentially representing different content themes or creators.\n- Thumbnails of posts, which may include short video clips or static images.\n\nThe top menu bar appears to show open tabs and bookmarked shortcuts, indicating it is a web browser view.",
+      "created": 1744487391,
+      "last_found": 1744487391,
+      "locations": [
+        {
+          "coordinates": [
+            131,
+            672
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            106,
+            647,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744487391,
+          "screen_hash": "e2c8821b80a11d20ce92a0a37c616381",
+          "screenshot": "b014b64cd3df0cb59b4ddaf9b73fcf52_1744487391.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0,
+      "text_match": 0.5
+    },
+    {
+      "id": "c88aa1f740401d53dd9c357dbe37ca4d",
+      "search_text": "Explore",
+      "context_info": "Боковое меню инстаграма",
+      "screen_context": "This screenshot is from an Instagram feed, not an app store search results page. \n\nHere's what's shown in the image:\n\n1. **Instagram Interface**: \n   - The left sidebar includes options like Home, Search, Explore, Reels, Messages, Notifications, Create, Dashboard, Profile, and others.\n   - There's a Stories section at the top with circular profile images.\n\n2. **Content Displayed**:\n   - A post from \"TechCrunch\" is visible.\n   - The image in the post shows a news article with a headline about a fintech founder charged with fraud related to an AI shopping app.\n   - There are user engagement options below the post, such as like, comment, and share buttons.\n\n3. **Right Sidebar**:\n   - Suggestions for other accounts to follow.\n   - A few user interactions like switching profiles.\n\nThis appears to be a typical Instagram browsing experience focused on keeping up with news and updates from followed accounts.",
+      "created": 1744488263,
+      "last_found": 1744488263,
+      "locations": [
+        {
+          "coordinates": [
+            183,
+            770
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            158,
+            745,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744488263,
+          "screen_hash": "80498585af732693a2b8b10845df8551",
+          "screenshot": "c88aa1f740401d53dd9c357dbe37ca4d_1744488263.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0,
+      "text_match": 1.0
+    },
+    {
+      "id": "5eaafc0a12f3a27c5df8a6c7a2339585",
+      "search_text": "Search",
+      "context_info": "Кнопка на Левом боковом меню инстаграма",
+      "screen_context": "This screenshot shows an Instagram page viewed on a web browser. The screen includes:\n\n- The Instagram logo and navigation menu on the left, with options like Home, Search, Explore, Reels, Messages, Notifications, and Profile.\n- A post by TechCrunch in the center, featuring an image of a news article. The headline mentions a fintech founder being charged with fraud related to an AI shopping app.\n- Profile stories are visible at the top of the page.\n- Suggested profiles to follow are listed on the right side.\n  \nThis is not a search results screen from an app store; it’s a social media post view from Instagram.",
+      "created": 1744488894,
+      "last_found": 1744488894,
+      "locations": [
+        {
+          "coordinates": [
+            183,
+            672
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            158,
+            647,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744488894,
+          "screen_hash": "d6e055573ec6398fe5a74be0dc9b9a69",
+          "screenshot": "5eaafc0a12f3a27c5df8a6c7a2339585_1744488894.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0,
+      "text_match": 0.5
+    },
+    {
+      "id": "54602a3e7747d6b9aa3180c2f27cc8dc",
+      "search_text": "Explore",
+      "context_info": "Боковое левое  меню инстаграма",
+      "screen_context": "This is not a search results screen from an app store. It appears to be a screenshot of the Instagram website in a web browser. \n\nHere’s what is shown:\n\n1. **Instagram Interface**: On the left side, there is a menu with options like Home, Explore, Reels, Messages, Notifications, and more.\n\n2. **Main Feed**: In the central area, there is a post featuring a person holding a weapon in what looks like a shooting range. The user's name and post details are visible above the image.\n\n3. **Stories**: At the top, there are circular icons representing Instagram stories from different users.\n\n4. **Suggested for You**: On the right side, there's a list of suggested accounts to follow.\n\n5. **Other Elements**: Browser tabs and bookmarks are visible at the top, indicating multiple tabs open and web activity.\n\nThis screenshot provides a view of social media activity, focusing on content sharing and user interaction.",
+      "created": 1744489256,
+      "last_found": 1744489256,
+      "locations": [
+        {
+          "coordinates": [
+            131,
+            770
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            106,
+            745,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744489256,
+          "screen_hash": "216f79f6b76036d6ca3fb9acb79a087e",
+          "screenshot": "54602a3e7747d6b9aa3180c2f27cc8dc_1744489256.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0,
+      "text_match": 1.0
+    },
+    {
+      "id": "2e1d6fae050855c0120f31226257d40c",
+      "search_text": "Search",
+      "context_info": "Текстовая кнопка в боковом меню инстаграма",
+      "screen_context": "This screenshot shows the Instagram Explore page, which features a variety of posts that the algorithm suggests based on user activity. It's not a search results screen from an app store. Information typically shown includes a diverse range of images and videos meant to engage users, often based on their interests or popular content trends.",
+      "created": 1744490059,
+      "last_found": 1744490059,
+      "locations": [
+        {
+          "coordinates": [
+            131,
+            672
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            106,
+            647,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744490059,
+          "screen_hash": "3a234c5a054ca3fff6ba3c36f02c60fc",
+          "screenshot": "2e1d6fae050855c0120f31226257d40c_1744490059.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0,
+      "text_match": 0.5
+    },
+    {
+      "id": "c5488246c47251ef86eb4c68df988fde",
+      "search_text": "Craft",
+      "context_info": "Надпись названия приложения для апстора, сверху",
+      "screen_context": "The screenshot appears to be divided into two main sections:\n\n1. **Left Side (App Store Interface):**\n   - This side looks like a page from the Mac App Store.\n   - It displays the details for an app named \"Craft: Edit documents & files.\"\n   - Information shown includes:\n     - App icon and name.\n     - A button labeled \"ЗАГРУЗИТЬ\" (Download).\n     - User ratings (4.9 out of 5) and the number of ratings (185).\n     - Age rating: 4+.\n     - A description of what the app does.\n     - Supported platforms: Mac, iPhone, and iPad.\n     - Screenshots and promotional images.\n\n2. **Right Side (Code Editor/Terminal):**\n   - This part displays a coding environment, possibly a terminal or text editor.\n   - It includes terminal logs related to Python processes and Python Telegram Bot interactions.\n   - A dropdown showing Python versions and environments.\n   - List of commands and logs of a bot interacting through Telegram.\n\nOverall, the left side provides app details and download options, while the right side displays coding activities and terminal outputs.",
+      "created": 1744510117,
+      "last_found": 1744510117,
+      "locations": [
+        {
+          "coordinates": [
+            1548,
+            1885
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            1523,
+            1860,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744510117,
+          "screen_hash": "a270963d66e38d8e3f430b7c7e39822c",
+          "screenshot": "c5488246c47251ef86eb4c68df988fde_1744510117.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "443237c72836ca46e12d6818552d4d7b",
+      "search_text": "Dashboard",
+      "context_info": "Текстовая кнопка в левом боковом меню экрана",
+      "screen_context": "This screenshot is from Instagram viewed on a web browser. It is not a search results screen from an app store. \n\nHere's what is visible in the screenshot:\n\n1. **Instagram Interface**:\n   - On the left, there's a navigation sidebar with options like Home, Search, Explore, Reels, Messages, Notifications, Create, Dashboard, Profile, etc.\n   - A row of stories at the top.\n   - A main feed post in the center featuring a science-related post by \"wired,\" with a headline about an IVF alternative.\n\n2. **Post Details**:\n   - The post includes an image and a headline related to a scientific topic.\n   - Engagement options like likes and comments are visible.\n\n3. **Right Sidebar**:\n   - Suggestions for people to follow are shown.\n   - User profile details with an option to switch accounts.\n\n4. **Browser Tabs and Bookmarks**:\n   - Numerous open tabs and a bookmarks bar are visible at the top of the screen, indicating other websites and tools the user might be utilizing.\n\nThis image provides a glimpse into typical social media browsing, highlighting a specific post and user interaction features on Instagram.",
+      "created": 1744525934,
+      "last_found": 1744527491,
+      "locations": [
+        {
+          "coordinates": [
+            131,
+            1328
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            106,
+            1303,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744525934,
+          "screen_hash": "cfec1dbf4a617e3f4eff2abd425890ec",
+          "screenshot": "443237c72836ca46e12d6818552d4d7b_1744525934.png"
+        }
+      ],
+      "success_count": 3,
+      "total_searches": 3,
+      "success_rate": 1.0,
+      "text_match": 1.0
+    },
+    {
+      "id": "95711878ca99d4e1be1df97c6895876b",
+      "search_text": "Reels",
+      "context_info": "Это текстовая кнопка в левой стороне экрана блок меню инстаграма",
+      "screen_context": "This screenshot is not from an app store search results screen. It appears to be from Instagram's Professional Dashboard, which is a part of their web interface. Here's the kind of information shown:\n\n1. **Navigation Panel**: On the left side, there are options like Home, Search, Explore, Reels, Messages, Notifications, Create, Dashboard, Profile, AI Studio, Threads, and More.\n\n2. **Professional Dashboard**: The main section features a professional dashboard with options for managing ads and boosting content.\n\n3. **Manage Ads Section**: It suggests boosting content to increase visibility.\n\n4. **Create Your Next Ad**: Includes options for using your current top post to reach more people and creating a new ad.\n\n5. **Other Tools**: A section for payment settings.\n\n6. **Footer Links**: Contains links to Meta, About, Blog, Jobs, Help, API, Privacy, Terms, Locations, and more.\n\nThis screen is designed for managing and promoting content on Instagram.",
+      "created": 1744527324,
+      "last_found": 1744527324,
+      "locations": [
+        {
+          "coordinates": [
+            183,
+            868
+          ],
+          "screen_size": [
+            3360,
+            2100
+          ],
+          "element_rect": [
+            158,
+            843,
+            50,
+            50
+          ],
+          "match_percentage": 100,
+          "timestamp": 1744527324,
+          "screen_hash": "0903fb063545cfac4c3aa00c80da663f",
+          "screenshot": "95711878ca99d4e1be1df97c6895876b_1744527324.png"
+        }
+      ],
+      "success_count": 1,
+      "total_searches": 1,
+      "success_rate": 1.0
+    }
+  ],
+  "last_updated": "2025-04-15T18:18:14.682300",
+  "version": "1.0"
+}

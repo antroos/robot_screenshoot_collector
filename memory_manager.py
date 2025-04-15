@@ -99,6 +99,8 @@ class MemoryManager:
     def _save_memory(self):
         """
         Сохраняет текущую память в файл.
+        Returns:
+            bool: True если сохранение успешно, иначе False.
         """
         try:
             # Обновляем время последнего обновления
@@ -111,13 +113,25 @@ class MemoryManager:
             
             # Переименовываем временный файл в основной
             if os.path.exists(self.memory_file):
-                os.remove(self.memory_file)
+                # Попытка удалить старый файл, игнорируя ошибку, если он не существует
+                try:
+                    os.remove(self.memory_file)
+                except FileNotFoundError:
+                    logger.warning(f"При сохранении памяти не найден старый файл {self.memory_file}, возможно, это первое сохранение.")
             os.rename(temp_file, self.memory_file)
             
             elements_count = len(self.memory.get("elements", []))
             logger.info(f"Память успешно сохранена в {self.memory_file} - {elements_count} элементов")
+            return True # Явно возвращаем True при успехе
         except Exception as e:
-            logger.error(f"Ошибка при сохранении памяти: {str(e)}")
+            logger.error(f"Ошибка при сохранении памяти в файл '{self.memory_file}': {str(e)}", exc_info=True) # Добавляем traceback
+            # Попытка удалить временный файл, если он остался
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception as remove_e:
+                logger.error(f"Не удалось удалить временный файл {temp_file} после ошибки сохранения: {remove_e}")
+            return False # Явно возвращаем False при ошибке
     
     def _generate_element_id(self, search_text, context_info=None):
         """
@@ -184,167 +198,92 @@ class MemoryManager:
             logger.error(f"Ошибка при создании скриншота области: {str(e)}")
             return None
     
-    def save_element(self, search_text, coordinates, match_percentage, screen_context="", 
-                   context_info=None, element_size=None, screen_size=None, element_rect=None, screenshot_path=None):
+    def save_element(self, search_text, coordinates, match_percentage, screen_context, context_info="", 
+                     element_size=None, screen_size=None, element_rect=None, screenshot_path=None,
+                     after_context=None, context_diff=None, visual_diff=False):
         """
         Сохраняет элемент в памяти.
         
         Args:
             search_text (str): Текст, который искали
-            coordinates (tuple): Координаты найденного элемента (x, y)
-            match_percentage (int): Процент соответствия (0-100)
-            screen_context (str): Контекст экрана
-            context_info (str, optional): Дополнительная контекстная информация
-            element_size (tuple, optional): Размер элемента (ширина, высота)
-            screen_size (tuple, optional): Размер экрана (ширина, высота)
-            element_rect (tuple, optional): Прямоугольник элемента (x, y, ширина, высота)
-            screenshot_path (str, optional): Путь к файлу скриншота, если уже существует
-            
+            coordinates (tuple): Координаты элемента (x, y)
+            match_percentage (float): Процент совпадения (0.0-1.0)
+            screen_context (str): Контекст экрана, в котором находится элемент
+            context_info (str, optional): Дополнительная информация о контексте от пользователя
+            element_size (tuple, optional): Размер элемента (width, height)
+            screen_size (tuple, optional): Размер экрана (width, height)
+            element_rect (tuple, optional): Прямоугольник элемента (x1, y1, x2, y2)
+            screenshot_path (str, optional): Путь к скриншоту с элементом
+            after_context (str, optional): Контекст экрана после клика
+            context_diff (list, optional): Список изменений между контекстами до и после клика
+            visual_diff (bool, optional): Обнаружены ли визуальные различия на скриншотах до/после
+        
         Returns:
-            bool: True если успешно, иначе False
+            bool: True если элемент успешно сохранен, иначе False
         """
         try:
-            # Получаем размеры экрана
-            if screen_size:
-                screen_width, screen_height = screen_size
-            else:
-                # Получаем текущий скриншот для определения размера экрана
-                full_screenshot = pyautogui.screenshot()
-                screen_width, screen_height = full_screenshot.size
-                
-            # Генерируем уникальный ID для элемента
-            element_id = self._generate_element_id(search_text, context_info)
+            # Загружаем текущее состояние памяти
+            memory_data = self._load_memory()
             
-            # Работаем с прямоугольником элемента
-            if element_rect:
-                element_x, element_y, element_width, element_height = element_rect
-            else:
-                # Определяем размер элемента, если не указан
-                if not element_size:
-                    # По умолчанию используем область 100x50 пикселей вокруг координат
-                    element_width = 100
-                    element_height = 50
-                else:
-                    element_width, element_height = element_size
-                    
-                element_x = max(0, coordinates[0] - element_width // 2)
-                element_y = max(0, coordinates[1] - element_height // 2)
-            
-            # Вычисляем хеш скриншота
-            if screenshot_path and os.path.exists(screenshot_path):
-                try:
-                    img = Image.open(screenshot_path)
-                    screen_hash = self._get_screenshot_hash(img)
-                except Exception as e:
-                    logger.error(f"Ошибка при открытии скриншота из файла: {str(e)}")
-                    # Получаем текущий скриншот и вычисляем его хеш
-                    full_screenshot = pyautogui.screenshot()
-                    screen_hash = self._get_screenshot_hash(full_screenshot)
-            else:
-                # Получаем текущий скриншот и вычисляем его хеш
-                full_screenshot = pyautogui.screenshot()
-                screen_hash = self._get_screenshot_hash(full_screenshot)
-            
-            # Получаем область элемента из скриншота
-            if screenshot_path and os.path.exists(screenshot_path):
-                try:
-                    full_img = Image.open(screenshot_path)
-                    element_screenshot = full_img.crop((
-                        element_x, element_y, 
-                        min(element_x + element_width, full_img.width), 
-                        min(element_y + element_height, full_img.height)
-                    ))
-                except Exception as e:
-                    logger.error(f"Ошибка при вырезании элемента из файла: {str(e)}")
-                    element_screenshot = self._capture_element_area(
-                        element_x, element_y, element_width, element_height
-                    )
-            else:
-                element_screenshot = self._capture_element_area(
-                    element_x, element_y, element_width, element_height
-                )
-            
-            # Сохраняем скриншот элемента
-            timestamp = int(time.time())
-            screenshot_filename = f"{element_id}_{timestamp}.png"
-            screenshot_path_to_save = os.path.join(self.screenshots_dir, screenshot_filename)
-            
-            if element_screenshot:
-                element_screenshot.save(screenshot_path_to_save)
-                logger.info(f"Сохранен скриншот элемента: {screenshot_path_to_save}")
-            
-            # Создаем запись о местоположении
-            location_entry = {
+            # Создаем новую запись о местоположении элемента
+            location = {
                 "coordinates": coordinates,
-                "screen_size": (screen_width, screen_height),
-                "element_rect": (element_x, element_y, element_width, element_height),
-                "match_percentage": match_percentage,
-                "timestamp": timestamp,
-                "screen_hash": screen_hash,
-                "screenshot": screenshot_filename if element_screenshot else None
+                "timestamp": int(time.time()),
+                "success_rate": 1.0,  # Новое местоположение всегда имеет 100% успешность
+                "screen_context": screen_context,
+                "context_info": context_info,
+                "element_size": element_size,
+                "screen_size": screen_size,
+                "element_rect": element_rect,
+                "screenshot_path": screenshot_path
             }
             
-            # Проверяем, существует ли элемент в памяти
+            # Добавляем дополнительную информацию о контексте после клика и изменениях, если доступна
+            if after_context:
+                location["after_context"] = after_context
+            
+            if context_diff:
+                location["context_diff"] = context_diff
+                
+            if visual_diff is not None:
+                location["visual_diff"] = visual_diff
+            
+            # Проверяем, существует ли уже такой элемент
             element_exists = False
-            for element in self.memory["elements"]:
-                if element["id"] == element_id:
-                    # Элемент существует, добавляем новое местоположение
-                    element["locations"].insert(0, location_entry)  # Добавляем в начало списка
+            for element in memory_data["elements"]:
+                if element["search_text"] == search_text:
+                    # Элемент уже существует, добавляем новое местоположение
+                    element["locations"].append(location)
                     
-                    # Ограничиваем количество сохраненных местоположений
-                    if len(element["locations"]) > 10:  # Храним не более 10 местоположений
-                        # Удаляем лишние, но сначала проверяем, есть ли у них скриншоты
-                        for old_location in element["locations"][10:]:
-                            if old_location.get("screenshot"):
-                                old_screenshot_path = os.path.join(self.screenshots_dir, old_location["screenshot"])
-                                if os.path.exists(old_screenshot_path):
-                                    try:
-                                        os.remove(old_screenshot_path)
-                                        logger.info(f"Удален устаревший скриншот: {old_screenshot_path}")
-                                    except Exception as e:
-                                        logger.error(f"Ошибка при удалении устаревшего скриншота: {str(e)}")
-                        
-                        # Обрезаем список местоположений
-                        element["locations"] = element["locations"][:10]
+                    # Обновляем процент успешности
+                    successful_searches = sum(1 for loc in element["locations"] if loc.get("success_rate", 0.0) > 0.7)
+                    element["success_rate"] = successful_searches / len(element["locations"])
                     
-                    # Обновляем поле last_found и screen_context
-                    element["last_found"] = timestamp
-                    if screen_context:
-                        element["screen_context"] = screen_context
+                    # Обновляем контекстную информацию, если она предоставлена
+                    if context_info and not element["context_info"]:
+                        element["context_info"] = context_info
                     
-                    # Обновляем success_rate
-                    element["success_count"] += 1
-                    element["total_searches"] += 1
-                    element["success_rate"] = element["success_count"] / element["total_searches"]
                     element_exists = True
                     break
             
-            # Если элемент не существует, создаем новый
             if not element_exists:
+                # Создаем новый элемент
                 new_element = {
-                    "id": element_id,
                     "search_text": search_text,
-                    "context_info": context_info or "",
-                    "screen_context": screen_context,
-                    "created": timestamp,
-                    "last_found": timestamp,
-                    "locations": [location_entry],
-                    "success_count": 1,
-                    "total_searches": 1,
-                    "success_rate": 1.0
+                    "context_info": context_info,
+                    "success_rate": 1.0,
+                    "locations": [location]
                 }
-                self.memory["elements"].append(new_element)
+                memory_data["elements"].append(new_element)
             
-            # Обновляем время последнего изменения
-            self.memory["last_updated"] = timestamp
+            # Обновляем время последнего обновления
+            memory_data["last_updated"] = int(time.time())
             
             # Сохраняем обновленную память
-            self._save_memory()
-            logger.info(f"Элемент '{search_text}' успешно сохранен в памяти")
-            return True
-        
+            return self._save_memory()
+            
         except Exception as e:
-            logger.error(f"Ошибка при сохранении элемента в память: {str(e)}")
+            logger.error(f"Ошибка при сохранении элемента в памяти: {str(e)}")
             return False
     
     def find_element(self, search_text, context_info=None, check_visually=True):
