@@ -17,6 +17,8 @@ from skimage.metrics import structural_similarity as ssim
 from pynput import mouse # Добавляем импорт
 import threading # Для ожидания клика в отдельном потоке
 import asyncio # Добавляем импорт для асинхронного ожидания
+import subprocess # Для выполнения AppleScript
+import sys # Для определения операционной системы
 
 # Настройка логирования
 logging.basicConfig(
@@ -104,6 +106,134 @@ async def take_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except Exception as send_e:
                 logger.error(f"Не удалось отправить сообщение об ошибке скриншота: {send_e}")
         return None
+
+def input_text(text, press_enter=False, delay=1.0, method="auto"):
+    """
+    Функция для ввода текста в активное поле ввода.
+    Использует лучший доступный метод на текущей ОС.
+    
+    Args:
+        text (str): Текст для ввода
+        press_enter (bool): Нажимать ли Enter после ввода текста
+        delay (float): Задержка перед вводом текста в секундах
+        method (str): Метод ввода ('auto', 'pyautogui', 'applescript', 'pbpaste')
+                      'auto' автоматически выбирает лучший метод для OS
+    
+    Returns:
+        bool: True в случае успеха, False в случае ошибки
+    """
+    # Автоматически выбираем метод ввода в зависимости от ОС
+    if method == "auto":
+        if sys.platform == 'darwin':  # macOS
+            method = "applescript"  # AppleScript обычно более надежен на macOS
+        else:
+            method = "pyautogui"  # стандартный метод для других ОС
+    
+    logger.info(f"Ввод текста: '{text}', с Enter: {press_enter}, метод: {method}")
+    
+    try:
+        # Задержка перед вводом, чтобы курсор был на месте
+        time.sleep(delay)
+        
+        if method == "applescript" and sys.platform == 'darwin':
+            # Метод с использованием AppleScript (только для macOS)
+            # Экранируем кавычки в тексте для AppleScript
+            escaped_text = text.replace('"', '\\"')
+            
+            # Создаем AppleScript для ввода текста
+            script = f'''
+            tell application "System Events"
+                keystroke "{escaped_text}"
+            '''
+            
+            if press_enter:
+                script += '''
+                delay 0.5
+                keystroke return
+                '''
+                
+            script += '''
+            end tell
+            '''
+            
+            # Выполняем AppleScript
+            result = subprocess.run(['osascript', '-e', script], 
+                                  capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"Текст введен через AppleScript: '{text}'")
+                if press_enter:
+                    logger.info("Нажата клавиша Enter через AppleScript")
+                return True
+            else:
+                logger.error(f"Ошибка при выполнении AppleScript: {result.stderr}")
+                return False
+                
+        elif method == "pbpaste" and sys.platform == 'darwin':
+            # Метод с использованием буфера обмена и Cmd+V (только для macOS)
+            try:
+                # Сохраняем текущее содержимое буфера обмена
+                original_clipboard = subprocess.check_output(['pbpaste']).decode('utf-8')
+                logger.info(f"Сохранено исходное содержимое буфера обмена")
+            except:
+                original_clipboard = ""
+                logger.warning("Не удалось сохранить исходное содержимое буфера обмена")
+            
+            # Помещаем нужный текст в буфер обмена
+            subprocess.run(['pbcopy'], input=text.encode('utf-8'))
+            logger.info(f"Текст помещен в буфер обмена")
+            
+            # Отправляем команду вставки (Cmd+V)
+            script = '''
+            tell application "System Events"
+                keystroke "v" using command down
+            '''
+            
+            if press_enter:
+                script += '''
+                delay 0.5
+                keystroke return
+                '''
+                
+            script += '''
+            end tell
+            '''
+            
+            # Выполняем AppleScript для вставки
+            result = subprocess.run(['osascript', '-e', script], 
+                                  capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"Текст вставлен из буфера обмена")
+                if press_enter:
+                    logger.info("Нажата клавиша Enter")
+                
+                # Восстанавливаем исходное содержимое буфера обмена
+                try:
+                    subprocess.run(['pbcopy'], input=original_clipboard.encode('utf-8'))
+                    logger.info("Исходное содержимое буфера обмена восстановлено")
+                except:
+                    logger.warning("Не удалось восстановить исходное содержимое буфера обмена")
+                    
+                return True
+            else:
+                logger.error(f"Ошибка при выполнении вставки: {result.stderr}")
+                return False
+        else:
+            # Стандартный метод с использованием PyAutoGUI
+            pyautogui.write(text)
+            logger.info(f"Текст введен через PyAutoGUI: '{text}'")
+            
+            if press_enter:
+                time.sleep(0.5)  # Небольшая пауза перед нажатием Enter
+                pyautogui.press('enter')
+                logger.info("Нажата клавиша Enter через PyAutoGUI")
+                
+            return True
+            
+    except Exception as e:
+        logger.error(f"Ошибка при вводе текста: {e}", exc_info=True)
+        return False
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает команду /search для поиска текста на экране."""
@@ -326,64 +456,41 @@ async def click_using_anthropic(x, y):
 
 async def type_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает команду /type для ввода текста."""
-    if len(context.args) < 2:
+    if not context.args:
         await update.message.reply_text(
-            "Пожалуйста, укажите текст для поиска и текст для ввода: /type <текст для поиска> | <текст для ввода>"
+            "Пожалуйста, укажите текст для ввода: /type <текст> [enter]\n"
+            "Добавьте слово 'enter' в конце, если нужно нажать Enter после ввода."
         )
         return
 
-    args_text = ' '.join(context.args)
-    if '|' not in args_text:
-        await update.message.reply_text(
-            "Пожалуйста, разделите текст для поиска и текст для ввода символом '|': /type <текст для поиска> | <текст для ввода>"
-        )
-        return
+    # Получаем текст для ввода
+    need_enter = False
+    if context.args[-1].lower() == 'enter':
+        text_to_type = ' '.join(context.args[:-1])
+        need_enter = True
+    else:
+        text_to_type = ' '.join(context.args)
     
-    search_text, type_text = args_text.split('|', 1)
-    search_text = search_text.strip()
-    type_text = type_text.strip()
+    logger.info(f"Ввод текста: '{text_to_type}', с Enter: {need_enter}")
     
-    logger.info(f"Поиск текста '{search_text}' и ввод '{type_text}'")
+    await update.message.reply_text(f"Сейчас введу текст: '{text_to_type}'...")
     
-    await update.message.reply_text(f"Начинаю поиск текста '{search_text}' для последующего ввода")
+    # Используем нашу новую функцию для ввода текста
+    success = input_text(text_to_type, need_enter, delay=1.0)
     
-    # Делаем скриншот
-    screenshot_path = await take_screenshot(update, context)
-    if not screenshot_path:
-        return
-    
-    try:
-        # Ищем текст на скриншоте
-        await update.message.reply_text("Анализирую скриншот...")
-        coordinates = find_text_on_image(screenshot_path, search_text)
-        
-        if coordinates:
-            x, y = coordinates
+    if success:
+        if need_enter:
             await update.message.reply_text(
-                f"Текст '{search_text}' найден в координатах (X: {x}, Y: {y}). Выполняю клик и ввод текста..."
+                f"✅ Текст '{text_to_type}' введен и нажата клавиша Enter."
             )
-            
-            # Кликаем по найденным координатам
-            pyautogui.click(x, y)
-            time.sleep(0.5)  # Даем время для отклика интерфейса
-            
-            # Вводим текст
-            pyautogui.write(type_text)
-            pyautogui.press('enter')
-            
-            # Делаем новый скриншот после ввода
-            time.sleep(1)  # Даем время для отклика интерфейса
-            new_screenshot = pyautogui.screenshot()
-            new_screenshot_path = os.path.join(working_dir, "after_type.png")
-            new_screenshot.save(new_screenshot_path)
-            
-            await update.message.reply_text(f"Текст '{type_text}' успешно введен!")
-            await update.message.reply_photo(photo=open(new_screenshot_path, 'rb'))
         else:
-            await update.message.reply_text(f"Текст '{search_text}' не найден на скриншоте. Ввод не выполнен.")
-    except Exception as e:
-        logger.error(f"Ошибка при поиске и вводе текста: {str(e)}")
-        await update.message.reply_text(f"Произошла ошибка при поиске и вводе текста: {str(e)}")
+            await update.message.reply_text(
+                f"✅ Текст '{text_to_type}' введен без нажатия Enter."
+            )
+    else:
+        await update.message.reply_text(
+            f"❌ Произошла ошибка при вводе текста. Пожалуйста, попробуйте снова."
+        )
 
 async def text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает текстовый ввод как запрос на поиск."""
@@ -1826,6 +1933,45 @@ async def post_confirm_action_callback(update: Update, context: ContextTypes.DEF
         return ConversationHandler.END
         
     context.user_data.clear()
+    return ConversationHandler.END
+
+async def handle_enter_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает подтверждение нажатия Enter."""
+    query = update.callback_query
+    await query.answer()
+    
+    text_to_type = context.user_data.get('text_to_type', '')
+    press_enter = query.data == "press_enter"
+    
+    try:
+        # Отправляем пользователю сообщение о начале ввода
+        await query.edit_message_text(
+            f"Ввожу текст: '{text_to_type}'" + 
+            (" с последующим нажатием Enter." if press_enter else " без нажатия Enter.")
+        )
+        
+        # Используем нашу новую функцию для ввода текста
+        success = input_text(text_to_type, press_enter, delay=1.0)
+        
+        if success:
+            if press_enter:
+                await update.callback_query.edit_message_text(
+                    f"✅ Текст '{text_to_type}' введен и нажата клавиша Enter."
+                )
+            else:
+                await update.callback_query.edit_message_text(
+                    f"✅ Текст '{text_to_type}' введен без нажатия Enter."
+                )
+        else:
+            await update.callback_query.edit_message_text(
+                f"❌ Произошла ошибка при вводе текста. Пожалуйста, попробуйте снова."
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при вводе текста: {e}", exc_info=True)
+        await query.edit_message_text(
+            f"❌ Произошла ошибка при вводе текста: {e}"
+        )
+    
     return ConversationHandler.END
 
 def main() -> None:
