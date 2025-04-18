@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #7F56D9;
+            --primary-hover: #6941C6;
+            --secondary-color: #F9F5FF;
+            --light-bg: #FFFFFF;
+            --dark-text: #101828;
+            --medium-text: #344054;
+            --light-text: #667085;
+            --user-bubble: #F9F5FF;
+            --ai-bubble: #F2F4F7;
+            --border-color: #EAECF0;
+            --shadow-color: rgba(16, 24, 40, 0.05);
+        }
+        body {
+            background-color: #FCFCFD;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--dark-text);
+            line-height: 1.5;
+        }
+        .chat-container {
+            max-width: 1000px;
+            margin: 30px auto;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 16px rgba(16, 24, 40, 0.08);
+            background-color: var(--light-bg);
+            border: 1px solid var(--border-color);
+        }
+        .chat-header {
+            background-color: var(--light-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header h4 {
+            font-weight: 600;
+            color: var(--dark-text);
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .chat-body {
+            height: 500px;
+            overflow-y: auto;
+            padding: 24px;
+            background-color: var(--light-bg);
+            scroll-behavior: smooth;
+        }
+        .message {
+            margin-bottom: 16px;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            position: relative;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message-user {
+            background-color: var(--user-bubble);
+            color: var(--dark-text);
+            margin-left: auto;
+            border-top-right-radius: 4px;
+        }
+        .message-assistant {
+            background-color: var(--ai-bubble);
+            color: var(--dark-text);
+            margin-right: auto;
+            border-top-left-radius: 4px;
+        }
+        .message-timestamp {
+            font-size: 0.7rem;
+            color: var(--light-text);
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+        .message-content {
+            word-wrap: break-word;
+        }
+        .chat-footer {
+            background-color: var(--light-bg);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            border-top: 1px solid var(--border-color);
+        }
+        .image-upload {
+            margin-right: 12px;
+        }
+        .image-preview {
+            max-width: 300px;
+            max-height: 200px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        textarea {
+            resize: none;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 10px 14px;
+            font-size: 14px;
+            box-shadow: 0 1px 2px var(--shadow-color);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        textarea:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(127, 86, 217, 0.1);
+        }
+        .typing-indicator {
+            display: none;
+            padding: 12px 16px;
+            background-color: var(--ai-bubble);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            width: fit-content;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: var(--primary-color);
+            border-radius: 50%;
+            margin-right: 4px;
+            animation: bounce 1.3s linear infinite;
+        }
+        .dot:nth-child(2) {
+            animation-delay: -1.1s;
+        }
+        .dot:nth-child(3) {
+            animation-delay: -0.9s;
+        }
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-5px); }
+        }
+        .btn {
+            padding: 10px 16px;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
+        .btn-secondary {
+            background-color: white;
+            border: 1px solid var(--border-color);
+            color: var(--medium-text);
+        }
+        .btn-secondary:hover {
+            background-color: #F9FAFB;
+            border-color: var(--border-color);
+            color: var(--dark-text);
+        }
+        .btn-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border-radius: 8px;
+        }
+        .btn-icon i {
+            font-size: 18px;
+        }
+        .input-group {
+            position: relative;
+            width: 100%;
+        }
+        .send-button {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h4><i class="fas fa-robot text-primary"></i> AI Chat Assistant</h4>
+                <div class="header-actions">
+                    <button id="clearChat" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-trash-alt me-1"></i> Clear Chat
+                    </button>
+                    <a href="/settings" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-cog me-1"></i> Settings
+                    </a>
+                </div>
+            </div>
+            
+            <div class="chat-body" id="chatBody">
+                <div class="typing-indicator" id="typingIndicator">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
+                
+                <!-- Chat messages will be added here -->
+                {% for message in messages %}
+                <div class="message message-{{ message.type }}">
+                    <span class="message-timestamp">[{{ message.timestamp }}] {{ 'You' if message.type == 'user' else 'AI' }}:</span>
+                    <div class="message-content">
+                        {{ message.text }}
+                        
+                        {% if message.image is defined %}
+                        <div class="mt-2">
+                            <img src="{{ message.image }}" class="image-preview">
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <div class="chat-footer">
+                <div class="image-upload">
+                    <button id="imageUploadBtn" class="btn btn-secondary btn-icon">
+                        <i class="fas fa-image"></i>
+                    </button>
+                    <input type="file" id="imageInput" style="display: none;" accept=".jpg,.jpeg,.png,.gif,.webp">
+                </div>
+                
+                <div class="input-group">
+                    <textarea id="messageInput" class="form-control" rows="2" placeholder="Type your message here..."></textarea>
+                    <button id="sendBtn" class="btn btn-primary send-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatBody = document.getElementById('chatBody');
+            const messageInput = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const imageUploadBtn = document.getElementById('imageUploadBtn');
+            const imageInput = document.getElementById('imageInput');
+            const clearChatBtn = document.getElementById('clearChat');
+            const typingIndicator = document.getElementById('typingIndicator');
+            
+            // Scroll chat down on load
+            chatBody.scrollTop = chatBody.scrollHeight;
+            
+            // Send message
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (message === '') return;
+                
+                // Show typing indicator
+                typingIndicator.style.display = 'block';
+                
+                // Send request to server
+                fetch('/send_message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        'message': message
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide typing indicator
+                    typingIndicator.style.display = 'none';
+                    
+                    // Clear input field
+                    messageInput.value = '';
+                    
+                    // Update chat
+                    updateChat(data.messages);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    typingIndicator.style.display = 'none';
+                });
+            }
+            
+            // Upload image
+            function uploadImage() {
+                const file = imageInput.files[0];
+                if (!file) return;
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Show typing indicator
+                typingIndicator.style.display = 'block';
+                
+                fetch('/upload_image', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide typing indicator
+                    typingIndicator.style.display = 'none';
+                    
+                    // Clear file input
+                    imageInput.value = '';
+                    
+                    // Update chat
+                    updateChat(data.messages);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    typingIndicator.style.display = 'none';
+                });
+            }
+            
+            // Update chat content
+            function updateChat(messages) {
+                // Clear chat content
+                chatBody.innerHTML = '';
+                
+                // Add typing indicator (hidden)
+                const indicator = document.createElement('div');
+                indicator.className = 'typing-indicator';
+                indicator.id = 'typingIndicator';
+                indicator.style.display = 'none';
+                
+                for (let i = 0; i < 3; i++) {
+                    const dot = document.createElement('span');
+                    dot.className = 'dot';
+                    indicator.appendChild(dot);
+                }
+                
+                chatBody.appendChild(indicator);
+                
+                // Add messages
+                messages.forEach((message, index) => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message message-${message.type}`;
+                    messageDiv.style.animationDelay = `${index * 0.1}s`;
+                    
+                    const timestamp = document.createElement('span');
+                    timestamp.className = 'message-timestamp';
+                    timestamp.textContent = `[${message.timestamp}] ${message.type === 'user' ? 'You' : 'AI'}:`;
+                    
+                    const content = document.createElement('div');
+                    content.className = 'message-content';
+                    content.textContent = message.text;
+                    
+                    messageDiv.appendChild(timestamp);
+                    messageDiv.appendChild(content);
+                    
+                    // Add image if exists
+                    if (message.image) {
+                        const imgContainer = document.createElement('div');
+                        imgContainer.className = 'mt-2';
+                        
+                        const img = document.createElement('img');
+                        img.src = message.image;
+                        img.className = 'image-preview';
+                        
+                        imgContainer.appendChild(img);
+                        content.appendChild(imgContainer);
+                    }
+                    
+                    chatBody.appendChild(messageDiv);
+                });
+                
+                // Scroll chat down
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
+            
+            // Clear chat
+            function clearChat() {
+                fetch('/clear_chat', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        chatBody.innerHTML = '';
+                        
+                        // Add typing indicator (hidden)
+                        const indicator = document.createElement('div');
+                        indicator.className = 'typing-indicator';
+                        indicator.id = 'typingIndicator';
+                        indicator.style.display = 'none';
+                        
+                        for (let i = 0; i < 3; i++) {
+                            const dot = document.createElement('span');
+                            dot.className = 'dot';
+                            indicator.appendChild(dot);
+                        }
+                        
+                        chatBody.appendChild(indicator);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            }
+            
+            // Event listeners
+            sendBtn.addEventListener('click', sendMessage);
+            
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            imageUploadBtn.addEventListener('click', function() {
+                imageInput.click();
+            });
+            
+            imageInput.addEventListener('change', uploadImage);
+            
+            clearChatBtn.addEventListener('click', clearChat);
+            
+            // Focus input field on load
+            messageInput.focus();
+        });
+    </script>
+</body>
+</html> 

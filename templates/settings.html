@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - AI Chat Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #7F56D9;
+            --primary-hover: #6941C6;
+            --secondary-color: #F9F5FF;
+            --light-bg: #FFFFFF;
+            --dark-text: #101828;
+            --medium-text: #344054;
+            --light-text: #667085;
+            --border-color: #EAECF0;
+            --shadow-color: rgba(16, 24, 40, 0.05);
+        }
+        body {
+            background-color: #FCFCFD;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--dark-text);
+            line-height: 1.5;
+        }
+        .settings-container {
+            max-width: 600px;
+            margin: 50px auto;
+            background-color: var(--light-bg);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 16px rgba(16, 24, 40, 0.08);
+            border: 1px solid var(--border-color);
+        }
+        .settings-header {
+            background-color: var(--light-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .settings-header h4 {
+            font-weight: 600;
+            color: var(--dark-text);
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .settings-body {
+            padding: 24px;
+        }
+        .form-label {
+            font-weight: 500;
+            color: var(--dark-text);
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .form-text {
+            color: var(--light-text);
+            font-size: 14px;
+            margin-top: 6px;
+        }
+        .form-control {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            box-shadow: 0 1px 2px var(--shadow-color);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(127, 86, 217, 0.1);
+        }
+        .btn {
+            padding: 10px 16px;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
+        .btn-secondary {
+            background-color: white;
+            border: 1px solid var(--border-color);
+            color: var(--medium-text);
+        }
+        .btn-secondary:hover {
+            background-color: #F9FAFB;
+            border-color: var(--border-color);
+            color: var(--dark-text);
+        }
+        .alert {
+            display: none;
+            margin-top: 24px;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 14px;
+            border: 1px solid transparent;
+        }
+        .alert-success {
+            background-color: #ECFDF3;
+            border-color: #ABEFC6;
+            color: #054F31;
+        }
+        .alert-danger {
+            background-color: #FEF3F2;
+            border-color: #FEE4E2;
+            color: #B42318;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .show-alert {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="settings-container">
+            <div class="settings-header">
+                <h4><i class="fas fa-cog text-primary"></i> API Settings</h4>
+                <a href="/" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i> Back to Chat
+                </a>
+            </div>
+            
+            <div class="settings-body">
+                <form id="settingsForm">
+                    <div class="mb-4">
+                        <label for="openaiKey" class="form-label">OpenAI API Key</label>
+                        <input type="password" class="form-control" id="openaiKey" name="openai_key" value="{{ api_key }}" placeholder="Enter your API key">
+                        <div class="form-text">This key is used to send requests to the GPT-4 API.</div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Save Settings
+                        </button>
+                    </div>
+                    
+                    <div class="alert alert-success" id="successAlert">
+                        <i class="fas fa-check-circle me-2"></i> API key successfully saved
+                    </div>
+                    
+                    <div class="alert alert-danger" id="errorAlert">
+                        <i class="fas fa-exclamation-circle me-2"></i> Error: API key cannot be empty
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const settingsForm = document.getElementById('settingsForm');
+            const successAlert = document.getElementById('successAlert');
+            const errorAlert = document.getElementById('errorAlert');
+            
+            settingsForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(settingsForm);
+                const apiKey = formData.get('openai_key').trim();
+                
+                // Hide previous alerts
+                successAlert.classList.remove('show-alert');
+                errorAlert.classList.remove('show-alert');
+                
+                // Send form to server
+                fetch('/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams(formData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Show success message
+                        successAlert.classList.add('show-alert');
+                        setTimeout(() => {
+                            successAlert.classList.remove('show-alert');
+                        }, 3000);
+                    } else {
+                        // Show error message
+                        errorAlert.textContent = data.message;
+                        errorAlert.classList.add('show-alert');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorAlert.textContent = 'An error occurred while saving settings';
+                    errorAlert.classList.add('show-alert');
+                });
+            });
+        });
+    </script>
+</body>
+</html> 
